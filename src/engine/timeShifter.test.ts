@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compressToFit, shiftSchedule } from "./timeShifter";
+import { compressToFit, getShiftableBlocks, shiftSchedule } from "./timeShifter";
 import type { RenderedBlock, RoutineBlock, OneOffEvent } from "../types/schedule";
 import type { DayTemplate } from "../types/template";
 
@@ -184,6 +184,88 @@ describe("shiftSchedule pulling earlier", () => {
   it("cannot overflow wind-down when pulling earlier", () => {
     const result = shiftSchedule(DATE, DAY, template([routineBlock()]), [], 8 * 60, -30);
     expect(result.overflowMinutes).toBe(0);
+  });
+});
+
+describe("getShiftableBlocks", () => {
+  it("offers only flexible blocks that haven't started, in time order", () => {
+    const blocks = [
+      routineBlock({ id: "late", startMinutes: 14 * 60, endMinutes: 15 * 60 }),
+      routineBlock({ id: "fixed", flexibility: "fixed", startMinutes: 11 * 60 }),
+      routineBlock({ id: "past", startMinutes: 7 * 60, endMinutes: 8 * 60 }),
+      routineBlock({ id: "soon", startMinutes: 10 * 60, endMinutes: 11 * 60 }),
+    ];
+    const shiftable = getShiftableBlocks(template(blocks), 9 * 60);
+    expect(shiftable.map((b) => b.id)).toEqual(["soon", "late"]);
+  });
+});
+
+describe("shiftSchedule with a subset selected", () => {
+  const twoBlocks = () => [
+    routineBlock({ id: "morning", startMinutes: 9 * 60, endMinutes: 10 * 60 }),
+    routineBlock({ id: "afternoon", startMinutes: 14 * 60, endMinutes: 15 * 60 }),
+  ];
+
+  it("moves only the selected block and leaves the rest alone", () => {
+    const result = shiftSchedule(
+      DATE,
+      DAY,
+      template(twoBlocks()),
+      [],
+      8 * 60,
+      30,
+      { blockIds: ["afternoon"] },
+    );
+    const byId = new Map(result.instance.blocks.map((b) => [b.sourceId, b]));
+    expect(byId.get("morning")!.startMinutes).toBe(9 * 60); // untouched
+    expect(byId.get("afternoon")!.startMinutes).toBe(14 * 60 + 30);
+  });
+
+  it("shifts everything eligible when no subset is given", () => {
+    const result = shiftSchedule(DATE, DAY, template(twoBlocks()), [], 8 * 60, 30);
+    const byId = new Map(result.instance.blocks.map((b) => [b.sourceId, b]));
+    expect(byId.get("morning")!.startMinutes).toBe(9 * 60 + 30);
+    expect(byId.get("afternoon")!.startMinutes).toBe(14 * 60 + 30);
+  });
+
+  it("does nothing when the selection is empty", () => {
+    const result = shiftSchedule(DATE, DAY, template(twoBlocks()), [], 8 * 60, 30, {
+      blockIds: [],
+    });
+    const byId = new Map(result.instance.blocks.map((b) => [b.sourceId, b]));
+    expect(byId.get("morning")!.startMinutes).toBe(9 * 60);
+    expect(byId.get("afternoon")!.startMinutes).toBe(14 * 60);
+  });
+
+  it("clamps an earlier shift against only the selected blocks", () => {
+    // "morning" starts at 9:00 and would bind the clamp, but it isn't
+    // selected — the afternoon block has hours of room and should move
+    // the full 60 minutes.
+    const result = shiftSchedule(
+      DATE,
+      DAY,
+      template(twoBlocks()),
+      [],
+      8 * 60 + 45,
+      -60,
+      { blockIds: ["afternoon"] },
+    );
+    expect(result.appliedDeltaMinutes).toBe(-60);
+    const afternoon = result.instance.blocks.find((b) => b.sourceId === "afternoon")!;
+    expect(afternoon.startMinutes).toBe(13 * 60);
+  });
+
+  it("ignores selected ids that aren't eligible to move anyway", () => {
+    const blocks = [
+      ...twoBlocks(),
+      routineBlock({ id: "pinned", flexibility: "fixed", startMinutes: 11 * 60, endMinutes: 12 * 60 }),
+    ];
+    const result = shiftSchedule(DATE, DAY, template(blocks), [], 8 * 60, 30, {
+      blockIds: ["pinned", "afternoon"],
+    });
+    const byId = new Map(result.instance.blocks.map((b) => [b.sourceId, b]));
+    expect(byId.get("pinned")!.startMinutes).toBe(11 * 60); // fixed stays fixed
+    expect(byId.get("afternoon")!.startMinutes).toBe(14 * 60 + 30);
   });
 });
 

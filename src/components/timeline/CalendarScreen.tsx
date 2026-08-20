@@ -55,7 +55,12 @@ export function CalendarScreen({ calendar, templates, now }: CalendarScreenProps
           }
           onShiftSchedule={
             calendar.anchorDate === today
-              ? (delta) => calendar.shiftToday(nowMinutes, delta)
+              ? (delta, blockIds) => calendar.shiftToday(nowMinutes, delta, blockIds)
+              : undefined
+          }
+          shiftableBlocks={
+            calendar.anchorDate === today
+              ? calendar.getShiftableToday(nowMinutes)
               : undefined
           }
         />

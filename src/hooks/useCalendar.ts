@@ -22,7 +22,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as db from "../services/db";
 import { renderDailyInstance } from "../engine/scheduler";
-import { shiftSchedule, type ShiftDeltaMinutes } from "../engine/timeShifter";
+import {
+  getShiftableBlocks,
+  shiftSchedule,
+  type ShiftDeltaMinutes,
+} from "../engine/timeShifter";
 import type { UseTemplatesResult } from "./useTemplates";
 import type { NewEventInput } from "./useSchedule";
 import {
@@ -33,7 +37,12 @@ import {
   startOfWeekIso,
   toIsoDate,
 } from "../lib/time";
-import type { DailyInstance, OneOffEvent, RenderedBlock } from "../types/schedule";
+import type {
+  DailyInstance,
+  OneOffEvent,
+  RenderedBlock,
+  RoutineBlock,
+} from "../types/schedule";
 import type { AdherenceLog } from "../types/adherence";
 
 export type CalendarViewMode = "day" | "3day" | "week" | "month";
@@ -96,7 +105,13 @@ export interface UseCalendarResult {
    * Session-local only, like Focus's nudges: not persisted, and reset
    * whenever the visible range's data reloads. Only meaningful — and only
    * wired up in the UI — while viewing today. */
-  shiftToday: (nowMinutes: number, deltaMinutes: ShiftDeltaMinutes) => void;
+  shiftToday: (
+    nowMinutes: number,
+    deltaMinutes: ShiftDeltaMinutes,
+    blockIds?: string[],
+  ) => void;
+  /** Blocks a shift could move right now, for the shift modal's picker. */
+  getShiftableToday: (nowMinutes: number) => RoutineBlock[];
 }
 
 export function useCalendar(templates: UseTemplatesResult): UseCalendarResult {
@@ -243,7 +258,7 @@ export function useCalendar(templates: UseTemplatesResult): UseCalendarResult {
   );
 
   const shiftToday = useCallback(
-    (nowMinutes: number, deltaMinutes: ShiftDeltaMinutes) => {
+    (nowMinutes: number, deltaMinutes: ShiftDeltaMinutes, blockIds?: string[]) => {
       const todayIso = toIsoDate(new Date());
       const dayOfWeek = dayOfWeekForIso(todayIso);
       const template = blueprint.days[dayOfWeek];
@@ -255,10 +270,19 @@ export function useCalendar(templates: UseTemplatesResult): UseCalendarResult {
         eventsToday,
         nowMinutes,
         deltaMinutes,
+        blockIds ? { blockIds } : {},
       );
       setShiftOverride(instance);
     },
     [blueprint, events],
+  );
+
+  const getShiftableToday = useCallback(
+    (nowMinutes: number) => {
+      const todayIso = toIsoDate(new Date());
+      return getShiftableBlocks(blueprint.days[dayOfWeekForIso(todayIso)], nowMinutes);
+    },
+    [blueprint],
   );
 
   return {
@@ -279,5 +303,6 @@ export function useCalendar(templates: UseTemplatesResult): UseCalendarResult {
     removeEvent,
     findSourceEvent,
     shiftToday,
+    getShiftableToday,
   };
 }

@@ -1,6 +1,11 @@
 import { AlarmClockOff, Plus } from "lucide-react";
 import { useState } from "react";
-import type { Category, DailyInstance, RenderedBlock } from "../../types/schedule";
+import type {
+  Category,
+  DailyInstance,
+  RenderedBlock,
+  RoutineBlock,
+} from "../../types/schedule";
 import type { AdherenceLog } from "../../types/adherence";
 import type { NewEventInput } from "../../hooks/useSchedule";
 import type { ShiftDeltaMinutes } from "../../engine/timeShifter";
@@ -32,7 +37,9 @@ interface DayViewProps {
   onOpenBlockDetail: (block: RenderedBlock) => void;
   /** Schedule shift — only meaningful (and only rendered) for today,
    * since it moves blocks relative to the current time. */
-  onShiftSchedule?: (delta: ShiftDeltaMinutes) => void;
+  onShiftSchedule?: (delta: ShiftDeltaMinutes, blockIds: string[]) => void;
+  /** Blocks the shift tool may move; only read when onShiftSchedule is set. */
+  shiftableBlocks?: RoutineBlock[];
 }
 
 export function DayView({
@@ -45,6 +52,7 @@ export function DayView({
   onAddEvent,
   onOpenBlockDetail,
   onShiftSchedule,
+  shiftableBlocks,
 }: DayViewProps) {
   const [addingEvent, setAddingEvent] = useState(false);
   const [runningLate, setRunningLate] = useState(false);
@@ -144,6 +152,7 @@ export function DayView({
         <TimeShifterModal
           open={runningLate}
           onClose={() => setRunningLate(false)}
+          shiftableBlocks={shiftableBlocks ?? []}
           onShift={onShiftSchedule}
         />
       )}

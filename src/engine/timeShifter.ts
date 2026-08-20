@@ -30,6 +30,7 @@ import type {
   DayOfWeek,
   OneOffEvent,
   RenderedBlock,
+  RoutineBlock,
 } from "../types/schedule";
 import type { DayTemplate } from "../types/template";
 
@@ -44,6 +45,40 @@ export type ShiftDeltaMinutes =
   | -30
   | -15
   | ShiftMagnitudeMinutes;
+
+/**
+ * The blocks a shift is allowed to move: flexible routine blocks that
+ * haven't started yet. Exported so the UI offers exactly the set the
+ * engine will act on, rather than deriving its own list from rendered
+ * blocks and drifting out of agreement.
+ *
+ * Returns template blocks, not rendered ones, because a routine block
+ * split around an event renders as two parts sharing one source — the
+ * user picks "Flashcards Review" once and both parts move together.
+ */
+export function getShiftableBlocks(
+  template: DayTemplate,
+  nowMinutes: number,
+): RoutineBlock[] {
+  return template.blocks
+    .filter(
+      (block) => block.flexibility === "flexible" && block.startMinutes >= nowMinutes,
+    )
+    .sort((a, b) => a.startMinutes - b.startMinutes);
+}
+
+export interface ShiftScheduleOptions {
+  /**
+   * Restrict the shift to these template block ids. Omitted means every
+   * eligible block moves, which is the common case and the UI default.
+   *
+   * Selecting a subset is deliberately allowed to open gaps or close
+   * them — moving the afternoon back while the morning stays put is a
+   * legitimate thing to want, and the collision engine re-runs either
+   * way, so overlaps against fixed events are still resolved correctly.
+   */
+  blockIds?: string[];
+}
 
 export interface ShiftScheduleResult {
   instance: DailyInstance;
@@ -135,10 +170,15 @@ export function shiftSchedule(
   events: OneOffEvent[],
   nowMinutes: number,
   deltaMinutes: ShiftDeltaMinutes,
+  options: ShiftScheduleOptions = {},
 ): ShiftScheduleResult {
-  const movable = template.blocks.filter(
-    (block) => block.flexibility === "flexible" && block.startMinutes >= nowMinutes,
-  );
+  const selected = options.blockIds ? new Set(options.blockIds) : null;
+  const isMovable = (block: RoutineBlock) =>
+    block.flexibility === "flexible" &&
+    block.startMinutes >= nowMinutes &&
+    (selected === null || selected.has(block.id));
+
+  const movable = template.blocks.filter(isMovable);
 
   let appliedDelta: number = deltaMinutes;
   if (deltaMinutes < 0 && movable.length > 0) {
@@ -153,7 +193,7 @@ export function shiftSchedule(
   }
 
   const shiftedBlocks = template.blocks.map((block) =>
-    block.flexibility === "flexible" && block.startMinutes >= nowMinutes
+    isMovable(block)
       ? {
           ...block,
           startMinutes: block.startMinutes + appliedDelta,
