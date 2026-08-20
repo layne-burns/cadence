@@ -48,6 +48,20 @@ blueprint**. Splitting/shrinking is computed fresh per day at render time.
 - The blueprint (weekly template) itself is never written to by this engine —
   it only produces a derived per-day render.
 
+### Now & Next's "+10 min" and "Skip" (Phase 4, `hooks/useSchedule.ts`)
+
+Implemented as session-local, non-persisted "nudges" — an in-memory
+`{ blockId: minutesDelta }` map applied on top of the pure engine render,
+reset whenever the viewed date changes. "+10 min" adds a positive delta to
+the current block's end; "Skip" adds a negative delta that shrinks the
+current block's end to right now, which is enough to make
+`getCurrentAndNext` stop treating it as current. **This is a deliberate
+simplification, not the real feature** — it doesn't cascade the shift
+through the rest of the day and doesn't survive a reload. Phase 5's
+`timeShifter.ts` is the actual "running late" push engine (persisted,
+cascading, protects fixed events); when it lands, decide whether these
+Now & Next buttons should call into it instead of the nudge map.
+
 ### Running Late / Push Schedule (`engine/timeShifter.ts`)
 
 - Shifts all remaining **unfinished, flexible** blocks forward by
@@ -83,10 +97,9 @@ blueprint**. Splitting/shrinking is computed fresh per day at render time.
   `cadence.gistPat`, `cadence.gistId`, `cadence.lastKnownRemoteUpdatedAt`
   (the last one is sync bookkeeping, not a secret, but kept alongside the
   other two since it's meaningless without them).
-- No settings UI exists yet to actually call `useSync` — it's built and
-  tested (service layer) but not wired into the app, since there's no
-  Header/Settings entry point until Phase 4's layout lands. Wire
-  `GistConfigModal` up to it then; don't rebuild the hook.
+- Phase 4 added a Header with a settings icon, but it's `disabled` — no
+  `GistConfigModal` yet, so `useSync` still isn't called anywhere. Wire it
+  up there when that modal gets built; don't rebuild the hook.
 - `tsconfig`'s `erasableSyntaxOnly` disallows TS parameter-property syntax
   (`constructor(readonly x: T)`) — write class fields out explicitly
   instead (see `GistSyncError`).
@@ -136,7 +149,7 @@ Stack notes:
 - [x] Phase 1 — Vite + Tailwind + Lucide + TS types + Vitest scaffold
 - [x] Phase 2 — scheduler.ts collision engine + tests
 - [x] Phase 3 — db.ts (IndexedDB) + gistSync.ts + useSync.ts
-- [ ] Phase 4 — daily timeline + Now & Next focus UI
+- [x] Phase 4 — daily timeline + Now & Next focus UI
 - [ ] Phase 5 — timeShifter.ts + streaks.ts
 - [ ] Phase 6 — blueprint editor + analytics dashboard
 - [ ] Phase 7 — PWA manifest/SW, import/export, GitHub Pages deploy

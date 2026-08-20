@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MIN_FRAGMENT_MINUTES, renderDailyInstance } from "./scheduler";
+import { MIN_FRAGMENT_MINUTES, getCurrentAndNext, renderDailyInstance } from "./scheduler";
 import type { OneOffEvent, RoutineBlock } from "../types/schedule";
 import type { DayTemplate } from "../types/template";
 
@@ -231,5 +231,68 @@ describe("renderDailyInstance", () => {
 
     expect(instance.wakeMinutes).toBe(6 * 60 + 30);
     expect(instance.windDownMinutes).toBe(23 * 60);
+  });
+});
+
+describe("getCurrentAndNext", () => {
+  it("picks the block containing now as current, and the next-starting one as next", () => {
+    const instance = renderDailyInstance(
+      DATE,
+      DAY,
+      template([
+        block({ id: "a", startMinutes: 8 * 60, endMinutes: 9 * 60 }),
+        block({ id: "b", startMinutes: 9 * 60, endMinutes: 10 * 60 }),
+      ]),
+      [],
+    );
+
+    const { current, next } = getCurrentAndNext(instance, 8 * 60 + 30);
+    expect(current?.sourceId).toBe("a");
+    expect(next?.sourceId).toBe("b");
+  });
+
+  it("returns null current between blocks, with next still pointing ahead", () => {
+    const instance = renderDailyInstance(
+      DATE,
+      DAY,
+      template([
+        block({ id: "a", startMinutes: 8 * 60, endMinutes: 9 * 60 }),
+        block({ id: "b", startMinutes: 9 * 60 + 30, endMinutes: 10 * 60 }),
+      ]),
+      [],
+    );
+
+    const { current, next } = getCurrentAndNext(instance, 9 * 60 + 10);
+    expect(current).toBeNull();
+    expect(next?.sourceId).toBe("b");
+  });
+
+  it("returns null for both once the day's blocks are exhausted", () => {
+    const instance = renderDailyInstance(
+      DATE,
+      DAY,
+      template([block({ startMinutes: 8 * 60, endMinutes: 9 * 60 })]),
+      [],
+    );
+
+    const { current, next } = getCurrentAndNext(instance, 20 * 60);
+    expect(current).toBeNull();
+    expect(next).toBeNull();
+  });
+
+  it("treats a block's end minute as exclusive (back-to-back blocks hand off cleanly)", () => {
+    const instance = renderDailyInstance(
+      DATE,
+      DAY,
+      template([
+        block({ id: "a", startMinutes: 8 * 60, endMinutes: 9 * 60 }),
+        block({ id: "b", startMinutes: 9 * 60, endMinutes: 10 * 60 }),
+      ]),
+      [],
+    );
+
+    const { current, next } = getCurrentAndNext(instance, 9 * 60);
+    expect(current?.sourceId).toBe("b");
+    expect(next).toBeNull();
   });
 });

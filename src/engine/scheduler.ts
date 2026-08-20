@@ -224,3 +224,31 @@ export function renderDailyInstance(
     blocks,
   };
 }
+
+export interface CurrentAndNext {
+  current: RenderedBlock | null;
+  next: RenderedBlock | null;
+}
+
+/**
+ * Picks out "what's happening right now" and "what's after it" from an
+ * already-rendered day — the core of the Now & Next focus widget. Pure
+ * function of `(instance, nowMinutes)` rather than reading the clock
+ * itself, so it's testable without faking time and so the UI can pass in
+ * a session-nudged instance (see useSchedule's "+10 min" / skip handling)
+ * without this needing to know nudges exist.
+ */
+export function getCurrentAndNext(
+  instance: DailyInstance,
+  nowMinutes: number,
+): CurrentAndNext {
+  // `instance.blocks` is already sorted by start time by renderDailyInstance.
+  const current =
+    instance.blocks.find(
+      (block) =>
+        block.startMinutes <= nowMinutes && nowMinutes < block.endMinutes,
+    ) ?? null;
+  const next =
+    instance.blocks.find((block) => block.startMinutes > nowMinutes) ?? null;
+  return { current, next };
+}
