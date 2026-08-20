@@ -5,9 +5,12 @@ import { CalendarScreen } from "./components/timeline/CalendarScreen";
 import { NowAndNextCard } from "./components/focus/NowAndNextCard";
 import { AnalyticsScreen } from "./components/analytics/AnalyticsScreen";
 import { WeeklyBlueprintGrid } from "./components/weekly/WeeklyBlueprintGrid";
+import { SettingsModal } from "./components/settings/SettingsModal";
 import { useCalendar } from "./hooks/useCalendar";
 import { useSchedule } from "./hooks/useSchedule";
 import { useTemplates } from "./hooks/useTemplates";
+import { useSync } from "./hooks/useSync";
+import { useTheme } from "./hooks/useTheme";
 import { useNowTick } from "./hooks/useNowTick";
 import { getCurrentAndNext } from "./engine/scheduler";
 import {
@@ -20,6 +23,11 @@ import {
 
 function App() {
   const [view, setView] = useState<NavView>("calendar");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const theme = useTheme();
+  // Subscribes to db-level change notifications itself — nothing needs to
+  // tell it when to push. See hooks/useSync.ts.
+  const sync = useSync();
   // One shared blueprint instance — Calendar, Focus, and the Blueprint
   // editor all read and (for the editor) write the same state, so an
   // edit shows up everywhere immediately instead of only after a reload.
@@ -69,6 +77,7 @@ function App() {
         onPrev={view === "calendar" ? calendar.goPrev : undefined}
         onNext={view === "calendar" ? calendar.goNext : undefined}
         onToday={view === "calendar" ? calendar.goToday : undefined}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       {/* min-h-0 overrides the flex item's default auto min-height — without
@@ -110,6 +119,13 @@ function App() {
       </main>
 
       <BottomNav active={view} onChange={setView} />
+
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        sync={sync}
+        theme={theme}
+      />
     </div>
   );
 }

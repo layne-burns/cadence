@@ -10,9 +10,17 @@ interface HeaderProps {
   onPrev?: () => void;
   onNext?: () => void;
   onToday?: () => void;
+  onOpenSettings: () => void;
 }
 
-export function Header({ label, showTodayLink, onPrev, onNext, onToday }: HeaderProps) {
+export function Header({
+  label,
+  showTodayLink,
+  onPrev,
+  onNext,
+  onToday,
+  onOpenSettings,
+}: HeaderProps) {
   return (
     <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
       <div className="flex items-center gap-2">
@@ -47,14 +55,12 @@ export function Header({ label, showTodayLink, onPrev, onNext, onToday }: Header
           </button>
         )}
       </div>
-      {/* No settings modal yet — GistConfigModal attaches here once Gist
-          sync gets a UI (see CLAUDE.md's Phase 3 notes). */}
       <button
         type="button"
-        disabled
-        title="Settings — coming in a later phase"
+        onClick={onOpenSettings}
+        title="Settings"
         aria-label="Settings"
-        className="rounded-md p-1.5 text-neutral-300 dark:text-neutral-700"
+        className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
       >
         <Settings className="size-4" />
       </button>

@@ -1,0 +1,53 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [master]
+  # Lets you re-deploy from the Actions tab without pushing a commit.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race. `cancel-in-progress: false` so an
+# already-running deploy finishes rather than leaving Pages half-updated;
+# a newer commit just queues behind it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Tests before build on purpose: a red suite should stop the deploy,
+      # not get published and then noticed. `npm run build` runs `tsc -b`
+      # first, so typechecking is covered there.
+      - run: npm run test
+
+      - run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -3,21 +3,22 @@
  * what we last saw, pushes 2 seconds after the last local change, and
  * exposes manual configure/sync-now actions for the settings modal.
  *
- * This hook is deliberately blind to what "local data" actually is —
- * `changeSignal` is any value the caller changes whenever something worth
- * syncing has changed (e.g. a version counter bumped by useSchedule /
- * useTemplates in a later phase), and the actual payload is read fresh
- * from `services/db.ts` at push time via `db.exportAllData()`. That keeps
- * this hook decoupled from the shape of the app's other state.
+ * This hook stays blind to what "local data" actually is. It subscribes to
+ * `db.subscribeToDataChanges` for the *fact* that something changed, and
+ * re-reads the whole payload fresh via `db.exportAllData()` at push time.
+ * Phase 3 took a `changeSignal` parameter for this and left the wiring to
+ * a future caller; Phase 7 replaced that with the db-level subscription,
+ * since `services/db.ts` is the one choke point every write already passes
+ * through and is therefore the only place that can answer the question
+ * without every feature hook remembering to report in.
  *
- * Not exhaustively unit-tested here — the pure decision logic it leans on
+ * Not exhaustively unit-tested — the pure decision logic it leans on
  * (`shouldPullBeforePush`) and the network/storage calls it wraps
- * (gistSync.ts) already are. This hook's effect timing is better verified
- * against the real settings UI once that exists, per CLAUDE.md's
- * "verify in the browser" note.
+ * (gistSync.ts) both are. Effect timing here is verified against the real
+ * settings UI in the browser, per CLAUDE.md's "verify in the browser" note.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import * as db from "../services/db";
 import {
   GistSyncError,
@@ -74,7 +75,7 @@ export interface UseSyncResult {
   syncNow: () => Promise<void>;
 }
 
-export function useSync(changeSignal: unknown): UseSyncResult {
+export function useSync(): UseSyncResult {
   const [status, setStatus] = useState<SyncStatus>({ state: "idle" });
   const [isConfigured, setIsConfigured] = useState(
     () => loadStoredCredentials() !== null,
@@ -82,16 +83,27 @@ export function useSync(changeSignal: unknown): UseSyncResult {
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextPush = useRef(true); // don't push on initial mount
 
+  const changeSignal = useSyncExternalStore(
+    db.subscribeToDataChanges,
+    db.getDataVersion,
+    db.getDataVersion,
+  );
+
   const pullFromRemote = useCallback(async (pat: string, gistId: string) => {
     setStatus({ state: "syncing" });
     try {
       const { payload, updatedAt } = await fetchGist(pat, gistId);
-      await db.replaceAllData({
-        blueprint: payload.blueprint,
-        events: payload.events,
-        adherenceLogs: payload.adherenceLogs,
-        streakState: payload.streakState,
-      });
+      await db.replaceAllData(
+        {
+          blueprint: payload.blueprint,
+          events: payload.events,
+          adherenceLogs: payload.adherenceLogs,
+          streakState: payload.streakState,
+        },
+        // Silent: this write came *from* the remote, so notifying would
+        // schedule a push of the data we just pulled.
+        { silent: true },
+      );
       writeLastKnownRemoteUpdatedAt(updatedAt);
       setStatus({ state: "synced", lastSyncedAt: new Date().toISOString() });
     } catch (error) {
@@ -111,9 +123,9 @@ export function useSync(changeSignal: unknown): UseSyncResult {
     }
   }, []);
 
-  // Auto-pull on launch — runs once, deliberately not tied to
-  // `changeSignal`: this is "check what the remote has right now",
-  // independent of anything changing locally.
+  // Auto-pull on launch — runs once, deliberately not tied to the change
+  // signal: this is "check what the remote has right now", independent of
+  // anything changing locally.
   useEffect(() => {
     const credentials = loadStoredCredentials();
     if (!credentials?.gistId) return;

@@ -73,6 +73,39 @@ export async function __resetDbConnectionForTests(): Promise<void> {
     (await dbPromise).close();
   }
   dbPromise = null;
+  dataVersion = 0;
+  changeListeners.clear();
+}
+
+// ---- Change notification -------------------------------------------------
+//
+// Every write in the app funnels through this module, which makes it the
+// one place that can honestly answer "has anything changed?". Gist sync
+// (hooks/useSync.ts) subscribes via `useSyncExternalStore` to decide when
+// to debounce a push, instead of every feature hook having to remember to
+// tell the sync layer it wrote something.
+
+type ChangeListener = () => void;
+
+const changeListeners = new Set<ChangeListener>();
+let dataVersion = 0;
+
+export function subscribeToDataChanges(listener: ChangeListener): () => void {
+  changeListeners.add(listener);
+  return () => {
+    changeListeners.delete(listener);
+  };
+}
+
+/** Monotonic counter — the `getSnapshot` half of the `useSyncExternalStore`
+ * contract. Its value is meaningless on its own; only *changes* matter. */
+export function getDataVersion(): number {
+  return dataVersion;
+}
+
+function notifyDataChanged(): void {
+  dataVersion += 1;
+  for (const listener of changeListeners) listener();
 }
 
 // ---- Blueprint -------------------------------------------------------
@@ -86,6 +119,7 @@ export async function getBlueprint(): Promise<WeeklyBlueprint> {
 export async function saveBlueprint(blueprint: WeeklyBlueprint): Promise<void> {
   const db = await getDb();
   await db.put("blueprint", blueprint, SINGLETON_KEY);
+  notifyDataChanged();
 }
 
 // ---- One-off events ----------------------------------------------------
@@ -120,11 +154,13 @@ export async function getEventsInRange(
 export async function saveEvent(event: OneOffEvent): Promise<void> {
   const db = await getDb();
   await db.put("events", event);
+  notifyDataChanged();
 }
 
 export async function deleteEvent(id: string): Promise<void> {
   const db = await getDb();
   await db.delete("events", id);
+  notifyDataChanged();
 }
 
 // ---- Adherence logs ------------------------------------------------------
@@ -158,11 +194,13 @@ export async function getAdherenceLogsInRange(
 export async function saveAdherenceLog(log: AdherenceLog): Promise<void> {
   const db = await getDb();
   await db.put("adherenceLogs", log);
+  notifyDataChanged();
 }
 
 export async function deleteAdherenceLog(id: string): Promise<void> {
   const db = await getDb();
   await db.delete("adherenceLogs", id);
+  notifyDataChanged();
 }
 
 // ---- Streak state ------------------------------------------------------
@@ -176,6 +214,7 @@ export async function getStreakState(): Promise<StreakState> {
 export async function saveStreakState(state: StreakState): Promise<void> {
   const db = await getDb();
   await db.put("streak", state, SINGLETON_KEY);
+  notifyDataChanged();
 }
 
 // ---- Bulk export/import -------------------------------------------------
@@ -204,10 +243,25 @@ export async function exportAllData(): Promise<AllLocalData> {
   return { blueprint, events, adherenceLogs, streakState };
 }
 
+export interface ReplaceAllDataOptions {
+  /**
+   * Skip the change notification. Set this for a write that *originated*
+   * from the remote (a Gist pull): notifying would make `useSync` see a
+   * local change and schedule a push of the very data it just pulled —
+   * harmless but wasteful round-tripping. A JSON *import* deliberately
+   * does NOT pass this, since a restored backup should propagate up to
+   * the Gist.
+   */
+  silent?: boolean;
+}
+
 /** Replaces every store's contents with `data`, atomically per store. Used
  * when pulling a Gist that's newer than local, or restoring a JSON backup —
  * both are "the incoming data IS the new truth" operations, not merges. */
-export async function replaceAllData(data: AllLocalData): Promise<void> {
+export async function replaceAllData(
+  data: AllLocalData,
+  options: ReplaceAllDataOptions = {},
+): Promise<void> {
   const db = await getDb();
 
   await db.put("blueprint", data.blueprint, SINGLETON_KEY);
@@ -224,4 +278,6 @@ export async function replaceAllData(data: AllLocalData): Promise<void> {
     data.adherenceLogs.map((log) => logsTx.store.put(log)),
   );
   await logsTx.done;
+
+  if (!options.silent) notifyDataChanged();
 }

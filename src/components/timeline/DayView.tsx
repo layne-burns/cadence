@@ -64,8 +64,8 @@ export function DayView({
 
       {blocks.length === 0 ? (
         <div className="rounded-xl border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-          No blocks yet today. The weekly blueprint editor is coming in a
-          later phase — for now, add a one-off event to get started.
+          Nothing scheduled. Set up a recurring routine in <strong>Blueprint</strong>,
+          or add a one-off event for just this day.
         </div>
       ) : (
         <div className="relative flex" style={{ height }}>

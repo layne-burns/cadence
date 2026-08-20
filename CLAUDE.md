@@ -11,30 +11,32 @@ plainly, don't assume familiarity with jargon.
 
 ## Handoff: structural review session starts here
 
-Phases 0–6 are complete and pushed (see the phase tracker at the bottom of
-this file for what each one covered). The app is genuinely usable
-end-to-end: set up categories and routine blocks in Blueprint, they render
-correctly on Calendar (Day/3-Day/Week/Month all share one engine), the
-collision engine correctly splits/shrinks around one-off events, Focus mode
-tracks today independent of Calendar's browsed date, and Analytics shows
-real streak/heatmap/category data. **Only Phase 7 (PWA manifest/service
-worker, JSON import/export, GitHub Pages deploy config) remains unbuilt.**
+**All seven phases are complete and pushed** (see the phase tracker at the
+bottom of this file for what each covered). The app is usable end-to-end:
+set up categories and routine blocks in Blueprint, they render correctly on
+Calendar (Day/3-Day/Week/Month all share one engine), the collision engine
+splits/shrinks around one-off events, Focus tracks today independent of
+Calendar's browsed date, Analytics shows real streak/heatmap/category data,
+and Phase 7 added the PWA (installable, works offline), JSON backup
+import/export, a settings modal, a working theme toggle, and automated
+GitHub Pages deployment.
 
 This section is for a fresh session (structural review + further testing)
 to orient quickly without re-deriving what's already known. Everything
 below is also covered in more detail in its own section further down —
 this is the "read this first" summary, not a duplicate source of truth.
 
-**Test coverage gap — the single biggest thing to look at first.** All 93
+**Test coverage gap — the single biggest thing to look at first.** All 106
 existing tests (`npm run test`) cover `engine/`, `lib/`, and `services/` —
-pure functions and `db.ts`/`gistSync.ts` with `fake-indexeddb`/mocked
-`fetch`. **Zero hooks or components have unit tests.** Every hook
-(`useSchedule`, `useCalendar`, `useTemplates`, `useSync`, `useStreak`,
-`useAnalyticsData`) and every component were verified only by manually
-driving the dev server through the Browser tool this session — real
-verification, but not regression-proof. If component/hook testing
-infrastructure (`@testing-library/react` + jsdom) gets added, this is
-where it has the most leverage.
+pure functions plus `db.ts`/`gistSync.ts`/`transfer.ts` with
+`fake-indexeddb`/mocked `fetch`. **Zero hooks or components have unit
+tests.** Every hook (`useSchedule`, `useCalendar`, `useTemplates`,
+`useSync`, `useStreak`, `useAnalyticsData`, `useTheme`) and every component
+were verified only by manually driving the dev/preview server through the
+Browser tool — real verification, and it did catch several genuine bugs,
+but not regression-proof. If component/hook testing infrastructure
+(`@testing-library/react` + jsdom) gets added, this is where it has by far
+the most leverage.
 
 **Known gaps and simplifications worth a structural look:**
 
@@ -58,10 +60,12 @@ where it has the most leverage.
   timeShifter sections below for the reasoning), but confirm that's still
   the right call now that the rest of the app is real, not just whether
   it was reasonable to defer originally.
-- **No settings UI.** `useSync` (Gist sync) is fully built and tested but
-  never called anywhere — the header's settings icon is `disabled`. If
-  Gist sync is still wanted, `GistConfigModal` is the missing piece, not
-  the sync logic itself.
+- **Gist sync is wired up but has never been run against a real GitHub
+  token.** Phase 7 built the settings UI that calls it, and `gistSync.ts`
+  is unit-tested against a mocked `fetch`, but no live PAT has ever hit
+  `api.github.com` from this app. The create-gist / pull / debounced-push
+  round trip is the least-proven path in the codebase. Testing it needs a
+  real token, which is the user's to supply.
 - **The blueprint has no per-day history/versioning** — Analytics
   necessarily renders *today's* blueprint against every past matching
   weekday in its 30-day window, not what was actually scheduled
@@ -80,16 +84,10 @@ where it has the most leverage.
   stale-state bug in a new form. Worth deciding whether to keep the
   `key` convention or change `Modal` itself to conditionally render
   children.
-- **Dark mode has no way for a real user to ever reach it.** Every
-  component has correct `dark:` styling (verified throughout this
-  project by injecting the `.dark` class via the browser console), but
-  `@custom-variant dark` in `src/index.css` is class-based only, and
-  nothing in the app ever adds that class — no system-preference sync,
-  no toggle UI. Right now the app is light-mode-only in practice despite
-  being fully dark-mode-*styled*. A small `useTheme` hook (sync to
-  `prefers-color-scheme` by default, manual override persisted to
-  localStorage, toggle wired into the settings icon once that exists)
-  would turn already-correct CSS into a real feature.
+- **Import does a full `window.location.reload()`** rather than re-seeding
+  the hooks in place, and so does disconnecting Gist sync. Correct and
+  honest for operations this rare, but if a "reset everything" or
+  multi-device-merge feature ever lands, that pattern won't stretch.
 
 **Everything else** — architecture rules, the full domain-logic reference,
 commands, working style — is below, unchanged in nature from how it's
@@ -314,32 +312,96 @@ Now & Next buttons should call into it instead of the nudge map.
   `cadence.gistPat`, `cadence.gistId`, `cadence.lastKnownRemoteUpdatedAt`
   (the last one is sync bookkeeping, not a secret, but kept alongside the
   other two since it's meaningless without them).
-- Phase 4 added a Header with a settings icon, but it's `disabled` — no
-  `GistConfigModal` yet, so `useSync` still isn't called anywhere. Wire it
-  up there when that modal gets built; don't rebuild the hook.
 - `tsconfig`'s `erasableSyntaxOnly` disallows TS parameter-property syntax
   (`constructor(readonly x: T)`) — write class fields out explicitly
   instead (see `GistSyncError`).
 
+### Change notification (Phase 7, `services/db.ts`)
+
+`useSync` originally took a `changeSignal` parameter and left it to a
+future caller to bump whenever local data changed. Phase 7 replaced that
+with a subscription at the database layer: `db.ts` exports
+`subscribeToDataChanges` / `getDataVersion`, every write function calls a
+private `notifyDataChanged()`, and `useSync` consumes both through
+`useSyncExternalStore`. Since `db.ts` is already the single choke point
+every write passes through, it's the only place that can answer "did
+anything change?" without each feature hook remembering to report in.
+
+One sharp edge worth knowing: `replaceAllData` takes `{ silent: true }`,
+used **only** by the Gist *pull* path. Without it, pulling from the remote
+would notify → `useSync` would see a local change → it would schedule a
+push of the data it just pulled. A JSON *import* deliberately does not
+pass `silent`, because a restored backup should propagate up to the Gist.
+
+### Phase 7: PWA, backup, settings, deploy
+
+- **PWA** via `vite-plugin-pwa` (`generateSW`, `registerType: "autoUpdate"`
+  — no "update available, reload?" prompt, since there's no unsaved-form
+  state worth protecting and prompting someone with ADHD to service their
+  app is pure friction). All 10 assets precache; verified in `npm run
+  preview` that the SW registers at the right scope and the precache holds
+  `index.html` + JS + CSS + manifest + every icon, so a cold offline load
+  works. App data was already offline-first in IndexedDB.
+- **Icons**: `public/icon.svg` is the source of truth; `npm run icons`
+  rasterizes it to the PNGs a real install needs (`icon-192`, `icon-512`,
+  `icon-maskable-512` at 62% inset for Android's adaptive mask, and
+  `apple-touch-icon` at 180 — iOS screenshots the page instead of using an
+  SVG, and iPad is a target). The PNGs are committed so a normal build
+  never needs `sharp`.
+- **Theme**: `hooks/useTheme.ts` owns the `.dark` class. Three states, not
+  a boolean — "system" (keeps following the OS mid-session) is distinct
+  from explicitly choosing light or dark, and a boolean can't represent
+  it. **An inline script in `index.html` applies the stored theme before
+  first paint**; it duplicates the hook's resolution rule on purpose, and
+  the two must stay in sync (same `cadence.theme` key, same logic) or
+  dark-mode users get a white flash on every load.
+- **Backup**: `services/transfer.ts`. The file format is the *same*
+  `GistPayload` the Gist stores, so a backup file and a Gist file are
+  interchangeable and one validator covers both. Validation is hand-rolled
+  (no schema library) and collects every problem rather than failing on
+  the first, so a bad import reports all of its faults at once with full
+  field paths (`blueprint.days.monday.blocks[0].startMinutes must be a
+  number`). Import is destructive, so the UI runs validate → summarize →
+  confirm, then hard-reloads.
+- **Settings**: one `SettingsModal` with Appearance / Sync / Backup
+  panels, rather than the separate `GistConfigModal` + `ImportExportModal`
+  the original spec's file list named — two modals would need their own
+  menu to choose between them, and sync and backup are the same mental
+  category. This is what finally calls `useSync`, unused since Phase 3.
+- **Deploy**: `.github/workflows/deploy.yml` builds on push to `master`
+  (running the test suite first, so a red suite blocks the deploy) and
+  publishes `dist` to GitHub Pages. `vite.config.ts` sets `base` to
+  `/cadence/` for builds **and previews** — `vite preview` reports
+  `command === "serve"`, so checking `command` alone made preview serve at
+  `/` while its own HTML requested `/cadence/…`, 404ing every asset. Use
+  `isPreview`; that bug is exactly the kind `npm run preview` exists to
+  catch. To move to a root domain, set `GITHUB_PAGES_BASE` to `"/"` — the
+  manifest's `start_url`/`scope` derive from it automatically.
+
 ## Commands
 
 ```bash
-npm run dev         # Vite dev server (also registered in .claude/launch.json as "cadence-dev", port 5183)
-npm run build        # production build (tsc -b && vite build)
+npm run dev         # Vite dev server, base "/" (launch.json: "cadence-dev", port 5183)
+npm run preview      # serves dist at base "/cadence/" (launch.json: "cadence-preview", port 5184)
+npm run build         # production build (tsc -b && vite build) + service worker
 npm run test           # vitest run
 npm run test:watch    # vitest watch mode
 npm run typecheck      # tsc -b, strict mode, no emit
-npm run lint             # oxlint
+npm run lint            # oxlint
+npm run icons            # regenerate PNG icons from public/icon.svg (needs sharp)
 ```
+
+Note that `npm run preview` serves at **http://localhost:5184/cadence/**,
+not the bare origin — the base path is deliberately the same one GitHub
+Pages uses, so preview actually exercises the deployed configuration.
 
 Stack notes:
 - Tailwind CSS v4 via `@tailwindcss/vite` (no separate `tailwind.config.js` —
   theme tokens live in `src/index.css` under `@theme`).
 - Dark mode is **class-based**, not OS-only: `@custom-variant dark` in
   `src/index.css` makes `dark:` respond to a `.dark` class on an ancestor
-  (normally `<html>`). A later-phase theme hook is responsible for syncing
-  that class with system preference by default and a manual override on
-  top — until that hook exists, the app renders light-only.
+  (normally `<html>`). `hooks/useTheme.ts` owns that class, plus the
+  pre-paint inline script in `index.html` — see the Phase 7 section above.
 - `tsconfig.app.json` / `tsconfig.node.json` both set `"strict": true`
   (plus `noUncheckedIndexedAccess`) — this is the actual enforcement of the
   "no `any`" rule above, not just a convention.
@@ -357,8 +419,16 @@ Stack notes:
 
 ## Repo status
 
-- GitHub: https://github.com/layne-burns/cadence (private), remote `origin`,
-  branch `master`. `gh` CLI authenticated as `layne-burns`.
+- GitHub: https://github.com/layne-burns/cadence, remote `origin`, branch
+  `master`. `gh` CLI authenticated as `layne-burns`.
+- **Public**, deliberately: GitHub Pages needs either a public repo or a
+  paid plan, and the user chose public over paying. Nothing sensitive is
+  in the repo — the Gist PAT lives only in browser localStorage, schedule
+  data lives in IndexedDB and (optionally) a *private* Gist, and `.env` is
+  gitignored. Keep it that way: **never commit a token or real personal
+  schedule data.**
+- Live at https://layne-burns.github.io/cadence/ — pushes to `master`
+  deploy automatically via `.github/workflows/deploy.yml`.
 
 ## Phase tracker
 
@@ -372,4 +442,6 @@ Stack notes:
 - [x] Phase 6a — blueprint editor (categories + per-day blocks)
 - [x] Phase 6b — analytics dashboard (streak card, consistency trend,
       hourly heatmap, category breakdown) + useStreak's catch-up recording
-- [ ] Phase 7 — PWA manifest/SW, import/export, GitHub Pages deploy
+- [x] Phase 7 — PWA (manifest + service worker + icons), JSON
+      import/export, settings modal (activates Gist sync), theme toggle,
+      GitHub Pages deploy via Actions

@@ -2,9 +2,51 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Cadence</title>
+    <meta name="description" content="A time-blocked daily schedule with recovery tools, built for ADHD." />
+
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <!-- Browser chrome color. The manifest's theme_color is the brand
+         indigo (splash screen / task switcher); these two match the actual
+         page surface instead, so the address bar doesn't clash with a
+         near-black app in dark mode. -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0a0a" />
+
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Cadence" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
+    <!--
+      Applies the saved theme before first paint. Without this, the page
+      renders light, React mounts, useTheme adds `.dark`, and a dark-mode
+      user sees a white flash on every load. Must stay in sync with
+      src/hooks/useTheme.ts — same localStorage key, same resolution rule.
+      Wrapped in try/catch because localStorage throws outright in some
+      privacy modes, and a broken theme must never block the whole app.
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("cadence.theme");
+          var preference =
+            stored === "light" || stored === "dark" || stored === "system"
+              ? stored
+              : "system";
+          var isDark =
+            preference === "dark" ||
+            (preference === "system" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          if (isDark) document.documentElement.classList.add("dark");
+        } catch (error) {
+          /* no stored preference available — fall through to light */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
