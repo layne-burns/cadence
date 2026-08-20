@@ -121,7 +121,7 @@ Stack notes:
 
 - [x] Phase 0 — env diagnostics, `gh` installed, this file
 - [x] Phase 1 — Vite + Tailwind + Lucide + TS types + Vitest scaffold
-- [ ] Phase 2 — scheduler.ts collision engine + tests
+- [x] Phase 2 — scheduler.ts collision engine + tests
 - [ ] Phase 3 — db.ts (IndexedDB) + gistSync.ts
 - [ ] Phase 4 — daily timeline + Now & Next focus UI
 - [ ] Phase 5 — timeShifter.ts + streaks.ts
