@@ -5,6 +5,15 @@ import { Card } from "../common/Card";
 import { LiveProgressRing } from "./LiveProgressRing";
 import { formatMinutes } from "../../lib/time";
 
+/** 200 -> "3h 20m", 45 -> "45m". Clamped at zero so a tick landing just
+ * past a start time never renders a negative countdown. */
+function formatCountdown(minutes: number): string {
+  const total = Math.max(0, minutes);
+  const hours = Math.floor(total / 60);
+  const mins = total % 60;
+  return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+}
+
 interface NowAndNextCardProps {
   current: RenderedBlock | null;
   next: RenderedBlock | null;
@@ -34,17 +43,31 @@ export function NowAndNextCard({
     );
   }
 
-  if (!current) {
+  if (!current && next) {
+    // Focus is the screen you glance at, and a real schedule has long
+    // gaps in it — the owner's weekday blocks end early afternoon with
+    // nothing until wind-down. "Up next, in 3h 20m" keeps this useful
+    // during those hours instead of it going blank for most of the day.
     return (
       <Card className="flex flex-col items-center gap-2 p-8 text-center">
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">Up next</p>
-        <p className="text-xl font-medium">{next?.title}</p>
+        <p className="text-xs font-medium uppercase tracking-wide text-neutral-400 dark:text-neutral-500">
+          Up next
+        </p>
+        <p className="text-xl font-medium">{next.title}</p>
         <p className="text-sm text-neutral-500 dark:text-neutral-400">
-          starts at {next ? formatMinutes(next.startMinutes) : ""}
+          at {formatMinutes(next.startMinutes)}
+        </p>
+        <p className="mt-1 text-3xl font-semibold tabular-nums">
+          {formatCountdown(next.startMinutes - nowMinutes)}
+        </p>
+        <p className="text-xs text-neutral-400 dark:text-neutral-600">
+          of open time until then
         </p>
       </Card>
     );
   }
+
+  if (!current) return null; // unreachable: handled by the two cases above
 
   const duration = current.endMinutes - current.startMinutes;
   const elapsed = Math.min(Math.max(nowMinutes - current.startMinutes, 0), duration);

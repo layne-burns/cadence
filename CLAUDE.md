@@ -98,6 +98,13 @@ guided this project through Phases 0–6.
 Requested by the owner after living with the app for a day. Ordered
 roughly by dependency, not priority.
 
+**Status:** 4 and 5 are **done**, along with several items that came out
+of the whole-app review (event edit/delete, copy-day, the Focus
+countdown, and energy/friction capture — see "Shipped from the review"
+below). Still open: **1** (recurring events), **2** (boilerplate
+categories), **3** (robust cloud sync), **6** (notifications, via the
+`.ics` route).
+
 ### 1. Recurring one-off events
 
 `EventForm` currently creates a single-date `OneOffEvent`. Add a
@@ -134,7 +141,7 @@ sync section below for how it works today:
   localStorage — clearing site data makes the app think it's never synced.
 - No "you have unsynced local changes" indicator beyond transient status.
 
-### 4. Calendar blocks should size to their text
+### 4. Calendar blocks should size to their text — DONE
 
 Real blocks are 30–50 minutes; at DayView's 64px/hour a 30-minute block
 is ~32px, which cannot fit a title plus a time range. Blocks should grow
@@ -147,7 +154,7 @@ free of duration breaks that correspondence, so decide deliberately
 whether the ruler stays authoritative (and text overflows into the modal)
 or blocks can push each other down.
 
-### 5. Settings becomes its own bottom-nav tab
+### 5. Settings becomes its own bottom-nav tab — DONE
 
 Move settings out of the header icon into the bottom nav (bottom-right).
 The owner expects settings to grow, and a modal launched from a header
@@ -176,6 +183,47 @@ Target devices are a laptop and a Samsung Android phone. See the
 — the short version is that the Notification Triggers API that would have
 made this easy was abandoned by Chrome, so server-free *scheduled* local
 notifications do not exist on the web platform.
+
+## Shipped from the whole-app review (2026-08-20)
+
+A full review was run once the app was complete; the owner picked what to
+build. What landed, and the reasoning worth keeping:
+
+- **Event edit/delete**, via the new `BlockDetailModal`. Built together
+  with the block-sizing work because the modal that carries text overflow
+  is the same surface an event needs for editing — building them apart
+  would have meant building it twice.
+- **`copyDayTo`** in the blueprint editor. Copies, not links: linking
+  means editing Monday silently rewrites Tue–Fri, which needs an unlink
+  concept before it stops surprising people. Pasted blocks get fresh ids
+  because adherence check-ins key off rendered ids derived from them.
+- **Focus countdown in gaps.** Focus used to read "Nothing scheduled" for
+  the ~8 hours between the owner's early-afternoon finish and wind-down.
+  It now shows the next block and time until it.
+- **Energy / friction capture** (`CheckInPrompt`). These fields existed in
+  `AdherenceLog` and `TelemetrySample` since the original spec and
+  **nothing ever wrote them**, so analytics could only show *that* you
+  dropped off, never *why*. Now collected — but deliberately *after* the
+  one-tap "Mark done" completes, as a dismissible follow-up with fixed
+  tappable options rather than free text. For an ADHD tool the check-in
+  has to stay effortless; taxing it would trade a little insight for the
+  whole habit. If this ever grows, keep it off the fast path.
+
+**Explicitly deferred, with reasons** (don't silently revive these):
+- *Per-day blueprint snapshots* — would fix analytics applying today's
+  blueprint retroactively, but it's a real feature and the blueprint is
+  still being designed. Snapshotting churn captures nothing useful.
+- *Pruning adherence logs* — they grow unbounded and ride in every sync
+  payload. Real, but pruning discards the raw data analytics derives
+  from; archive-on-export is the better eventual answer.
+- *Partial completion* ("I did 20 of 50 minutes") — rejected. It
+  complicates the 75% threshold and taxes every check-in, and the
+  grace-day mechanic already addresses the all-or-nothing failure mode
+  it was meant to soften.
+
+**Next up, agreed:** derive the streak from logs instead of accumulating
+it (fixes ignored-day changes not applying retroactively), then `.ics`
+export for notifications.
 
 ## Notifications: what's actually possible
 

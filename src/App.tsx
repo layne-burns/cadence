@@ -3,6 +3,7 @@ import { Header } from "./components/layout/Header";
 import { BottomNav, type NavView } from "./components/layout/BottomNav";
 import { CalendarScreen } from "./components/timeline/CalendarScreen";
 import { NowAndNextCard } from "./components/focus/NowAndNextCard";
+import { CheckInPrompt } from "./components/focus/CheckInPrompt";
 import { AnalyticsScreen } from "./components/analytics/AnalyticsScreen";
 import { WeeklyBlueprintGrid } from "./components/weekly/WeeklyBlueprintGrid";
 import { SettingsScreen } from "./components/settings/SettingsScreen";
@@ -14,6 +15,7 @@ import { useSync } from "./hooks/useSync";
 import { useTheme } from "./hooks/useTheme";
 import { useNowTick } from "./hooks/useNowTick";
 import { getCurrentAndNext } from "./engine/scheduler";
+import type { RenderedBlock } from "./types/schedule";
 import {
   formatDateLabel,
   formatDateRangeLabel,
@@ -24,6 +26,9 @@ import {
 
 function App() {
   const [view, setView] = useState<NavView>("calendar");
+  // The block awaiting an optional energy/friction follow-up, set after a
+  // "Mark done" and cleared when answered or dismissed.
+  const [pendingCheckIn, setPendingCheckIn] = useState<RenderedBlock | null>(null);
   const theme = useTheme();
   // One shared settings instance — the settings screen writes it and
   // useStreak reads it, so a separate copy would mean toggling an ignored
@@ -96,7 +101,7 @@ function App() {
             </div>
           ) : (
             <div className="flex flex-1 items-center justify-center p-4">
-              <div className="w-full max-w-sm">
+              <div className="flex w-full max-w-sm flex-col gap-3">
                 <NowAndNextCard
                   current={current}
                   next={next}
@@ -106,10 +111,29 @@ function App() {
                       ? (focusToday.getLogForBlock(current.id)?.completed ?? false)
                       : false
                   }
-                  onMarkDone={(block) => void focusToday.logCheckIn(block, { completed: true })}
+                  onMarkDone={(block) => {
+                    // The check-in is complete right here. The follow-up
+                    // below is purely additive — see CheckInPrompt.
+                    void focusToday.logCheckIn(block, { completed: true });
+                    setPendingCheckIn(block);
+                  }}
                   onExtend={focusToday.extendBlock}
                   onSkip={(block) => focusToday.skipBlock(block, nowMinutes)}
                 />
+                {pendingCheckIn && (
+                  <CheckInPrompt
+                    key={pendingCheckIn.id}
+                    blockTitle={pendingCheckIn.title}
+                    onDismiss={() => setPendingCheckIn(null)}
+                    onSubmit={(values) => {
+                      void focusToday.logCheckIn(pendingCheckIn, {
+                        completed: true,
+                        ...values,
+                      });
+                      setPendingCheckIn(null);
+                    }}
+                  />
+                )}
               </div>
             </div>
           )
