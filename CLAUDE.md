@@ -243,6 +243,41 @@ both offline will still have one silently lose. Aggressive pulling makes
 that window much smaller but does not close it; per-entity merge is the
 real fix and remains unbuilt.
 
+### Three sync bugs found in real use — don't reintroduce them
+
+All three shared a shape: sync appeared to work while quietly destroying
+data or hiding failure.
+
+1. **"Sync now" only uploaded.** It called `pushToRemote` directly with
+   an unconditional PATCH. Pressing it on a stale device overwrote a
+   fresher device's data, under a label implying it merged. Replaced with
+   explicit `uploadNow` / `downloadNow` that name their direction. **Do
+   not reintroduce a single ambiguous "sync" button** — a control that
+   guesses direction is what caused this.
+2. **Opening the app auto-uploaded stale data.** `useStreak` writes the
+   daily catch-up on mount; that counts as a local change, which
+   scheduled a push two seconds later — *before* anything had looked at
+   the remote. So merely opening a stale device overwrote a fresher one,
+   with no button pressed. Fixed with the `reconciled` gate: **nothing
+   uploads until the first remote check finishes.** Anything that changes
+   before then is held in `pushWhenReconciled` and pushed after. Any new
+   mount-time write (a migration, a backfill) inherits this protection —
+   don't bypass the gate.
+3. **A failed pull reloaded the page and erased its own error.**
+   `pullFromRemote` catches internally, so callers reached
+   `window.location.reload()` even on failure, wiping the error off
+   screen and making a broken sync look like a dead button. It now
+   returns a success boolean and **every caller reloads only on success.**
+
+Related: `hasUnpushedChanges` lives in **localStorage**, not a ref. As a
+ref it reset on every page load, so an edit followed by a refresh lost
+the protection that stops a pull overwriting it.
+
+**Timing, for reference when something "isn't syncing":** a local change
+pushes ~2s after you stop editing; other devices notice on focus, on
+open, or within 60s of polling. Anything slower than that is a bug, not
+the design.
+
 ## Gotcha: "change in the order of Hooks" during development
 
 If the dev console shows *"React has detected a change in the order of

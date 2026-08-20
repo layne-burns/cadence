@@ -39,6 +39,14 @@ const PUSH_DEBOUNCE_MS = 2000;
  * enough to be invisible on a phone battery. */
 const REMOTE_POLL_MS = 60_000;
 const LAST_KNOWN_REMOTE_UPDATED_AT_KEY = "cadence.lastKnownRemoteUpdatedAt";
+/**
+ * Whether this device holds changes that never reached the remote.
+ *
+ * Persisted rather than kept in a ref, because a ref resets on every page
+ * load — which meant an edit made and then followed by a refresh lost its
+ * protection and could be silently overwritten by the next pull.
+ */
+const UNPUSHED_CHANGES_KEY = "cadence.hasUnpushedChanges";
 
 function buildPayload(data: db.AllLocalData): GistPayload {
   return {
@@ -50,6 +58,15 @@ function buildPayload(data: db.AllLocalData): GistPayload {
     streakState: data.streakState,
     settings: data.settings,
   };
+}
+
+function readHasUnpushedChanges(): boolean {
+  return globalThis.localStorage.getItem(UNPUSHED_CHANGES_KEY) === "1";
+}
+
+function writeHasUnpushedChanges(value: boolean): void {
+  if (value) globalThis.localStorage.setItem(UNPUSHED_CHANGES_KEY, "1");
+  else globalThis.localStorage.removeItem(UNPUSHED_CHANGES_KEY);
 }
 
 function readLastKnownRemoteUpdatedAt(): string | null {
@@ -101,12 +118,18 @@ export function useSync(): UseSyncResult {
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextPush = useRef(true); // don't push on initial mount
   /**
-   * True between a local change and its push landing. Auto-pull refuses
-   * to run while it's set: pulling replaces the entire local database, so
-   * doing it with an unpushed edit outstanding would silently discard
-   * that edit. Better to be briefly stale than to lose work.
+   * Nothing uploads until the first remote reconcile has finished.
+   *
+   * Without this gate, simply *opening* the app uploaded its whole
+   * database: useStreak writes the daily streak catch-up on mount, which
+   * counts as a local change, which scheduled a push two seconds later.
+   * Opening a stale device therefore overwrote a fresher device's data
+   * with no button ever pressed — the worst version of this bug, because
+   * it needed no user action to destroy work.
    */
-  const hasUnpushedChanges = useRef(false);
+  const [reconciled, setReconciled] = useState(false);
+  /** A change arrived while the gate was closed; push once it opens. */
+  const pushWhenReconciled = useRef(false);
   /** Guards against overlapping checks — a focus event and the interval
    * can easily fire together. */
   const checkInFlight = useRef(false);
@@ -156,7 +179,7 @@ export function useSync(): UseSyncResult {
       const local = await db.exportAllData();
       const { updatedAt } = await pushGist(pat, gistId, buildPayload(local));
       writeLastKnownRemoteUpdatedAt(updatedAt);
-      hasUnpushedChanges.current = false;
+      writeHasUnpushedChanges(false);
       setStatus({ state: "synced", lastSyncedAt: new Date().toISOString() });
     } catch (error) {
       setStatus(errorToStatus(error));
@@ -173,7 +196,7 @@ export function useSync(): UseSyncResult {
    * `hasUnpushedChanges`.
    */
   const checkRemoteForUpdates = useCallback(async () => {
-    if (checkInFlight.current || hasUnpushedChanges.current) return;
+    if (checkInFlight.current || readHasUnpushedChanges()) return;
     const credentials = loadStoredCredentials();
     if (!credentials?.gistId) return;
     const { pat, gistId } = credentials;
@@ -194,6 +217,10 @@ export function useSync(): UseSyncResult {
       setStatus(errorToStatus(error));
     } finally {
       checkInFlight.current = false;
+      // Open the upload gate regardless of outcome: a remote we couldn't
+      // reach must not block local work from ever syncing once it comes
+      // back. The dirty flag still protects unpushed edits from a pull.
+      setReconciled(true);
     }
   }, [pullFromRemote]);
 
@@ -202,7 +229,15 @@ export function useSync(): UseSyncResult {
   // matters in practice — picking the phone up after working on the
   // laptop is exactly when the local copy is stale.
   useEffect(() => {
-    if (!loadStoredCredentials()?.gistId) return;
+    if (!loadStoredCredentials()?.gistId) {
+      // Nothing to reconcile against, so open the upload gate. The
+      // set-state-in-effect warning here is the same false positive as
+      // the load effects in useSchedule/useCalendar: this is
+      // synchronising with an external system (stored credentials), not
+      // deriving state that could be computed during render.
+      setReconciled(true);
+      return;
+    }
 
     void checkRemoteForUpdates();
 
@@ -215,7 +250,7 @@ export function useSync(): UseSyncResult {
       // gambling that the 2s timer beats the tab being frozen. Closing a
       // phone app right after ticking something off is normal, and that
       // change reaching the remote is the whole point of syncing.
-      if (hasUnpushedChanges.current && pushTimer.current) {
+      if (readHasUnpushedChanges() && pushTimer.current) {
         clearTimeout(pushTimer.current);
         pushTimer.current = null;
         const credentials = loadStoredCredentials();
@@ -252,7 +287,17 @@ export function useSync(): UseSyncResult {
     // Set before the debounce, not after it fires: the whole point is to
     // block an auto-pull during the window where a change exists locally
     // but hasn't reached the remote yet.
-    hasUnpushedChanges.current = true;
+    writeHasUnpushedChanges(true);
+
+    // Hold anything that happens before the first reconcile — notably
+    // useStreak's mount-time catch-up write, which would otherwise
+    // upload this device's whole database before we'd even looked at
+    // what the remote had.
+    if (!reconciled) {
+      pushWhenReconciled.current = true;
+      return;
+    }
+    pushWhenReconciled.current = false;
 
     if (pushTimer.current) clearTimeout(pushTimer.current);
     pushTimer.current = setTimeout(() => {
@@ -263,7 +308,7 @@ export function useSync(): UseSyncResult {
       if (pushTimer.current) clearTimeout(pushTimer.current);
     };
     // `changeSignal` is the trigger by design — see the hook-level comment.
-  }, [changeSignal, pushToRemote]);
+  }, [changeSignal, pushToRemote, reconciled]);
 
   const configure = useCallback(
     async (pat: string, gistId?: string) => {
@@ -329,7 +374,7 @@ export function useSync(): UseSyncResult {
       return;
     }
     // Deliberately discarding local edits, so stop them blocking the pull.
-    hasUnpushedChanges.current = false;
+    writeHasUnpushedChanges(false);
     const ok = await pullFromRemote(credentials.pat, credentials.gistId);
     // Only reload on success; reloading after a failure would erase the
     // error the user needs to see.
