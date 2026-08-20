@@ -44,4 +44,12 @@ export type SyncStatus =
   | { state: "syncing" }
   | { state: "synced"; lastSyncedAt: string }
   | { state: "offline" }
-  | { state: "error"; message: string };
+  | { state: "error"; message: string }
+  /**
+   * Both sides changed since the last successful sync: this device has
+   * edits that never reached the remote, *and* the remote moved on
+   * (another device pushed). Neither copy is safely discardable, so the
+   * app stops and asks rather than picking a winner — whole-payload
+   * last-write-wins here would silently destroy a day's check-ins.
+   */
+  | { state: "conflict"; remoteUpdatedAt: string };

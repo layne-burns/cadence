@@ -4,6 +4,7 @@ import {
   clearCredentials,
   createGist,
   fetchGist,
+  findCadenceGists,
   findExistingCadenceGist,
   loadStoredCredentials,
   pushGist,
@@ -186,6 +187,26 @@ describe("REST client", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     expect(await findExistingCadenceGist("ghp_abc")).toBe("newer");
+  });
+
+  it("findCadenceGists returns every Cadence gist, so duplicates are detectable", async () => {
+    // Two gists means two devices each created their own instead of
+    // joining — a silent split where both report "Connected". The UI
+    // needs the count to warn about it.
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          { id: "5aaa", updated_at: "2026-08-20T02:00:00Z", files: { "cadence-data.json": {} } },
+          { id: "other", updated_at: "2026-08-20T01:00:00Z", files: { "notes.md": {} } },
+          { id: "1ccc", updated_at: "2026-08-19T02:00:00Z", files: { "cadence-data.json": {} } },
+        ]),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const gists = await findCadenceGists("ghp_abc");
+    expect(gists.map((g) => g.id)).toEqual(["5aaa", "1ccc"]);
   });
 
   it("findExistingCadenceGist surfaces a bad token instead of reporting 'none found'", async () => {

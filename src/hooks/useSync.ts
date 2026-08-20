@@ -79,7 +79,18 @@ export interface UseSyncResult {
   /** With a `gistId`: adopt an existing gist and pull it immediately.
    * Without one: create a new private gist seeded from local data. */
   configure: (pat: string, gistId?: string) => Promise<void>;
-  syncNow: () => Promise<void>;
+  /**
+   * Explicitly one-directional, and named for what they do.
+   *
+   * There used to be a single "Sync now" that quietly just uploaded, so
+   * pressing it on a stale device destroyed newer data from another one.
+   * Rather than make one button guess the right direction, the manual
+   * controls state their direction and their consequence — the automatic
+   * background sync handles the ordinary case, and these exist for when
+   * you need to force an outcome.
+   */
+  uploadNow: () => Promise<void>;
+  downloadNow: () => Promise<void>;
 }
 
 export function useSync(): UseSyncResult {
@@ -280,17 +291,44 @@ export function useSync(): UseSyncResult {
     [pullFromRemote],
   );
 
-  const syncNow = useCallback(async () => {
+  /**
+   * Force this device's copy up, replacing whatever is in the cloud.
+   *
+   * Adopts the remote's current timestamp as our baseline *before*
+   * pushing, so we aren't immediately re-flagged as conflicting with the
+   * version we just deliberately overwrote.
+   */
+  const uploadNow = useCallback(async () => {
     const credentials = loadStoredCredentials();
     if (!credentials?.gistId) {
-      setStatus({
-        state: "error",
-        message: "Gist sync isn't configured yet.",
-      });
+      setStatus({ state: "error", message: "Sync isn't set up yet." });
       return;
     }
-    await pushToRemote(credentials.pat, credentials.gistId);
+    const { pat, gistId } = credentials;
+    setStatus({ state: "syncing" });
+    try {
+      const { updatedAt } = await fetchGist(pat, gistId);
+      writeLastKnownRemoteUpdatedAt(updatedAt);
+      await pushToRemote(pat, gistId);
+    } catch (error) {
+      setStatus(errorToStatus(error));
+    }
   }, [pushToRemote]);
 
-  return { status, isConfigured, configure, syncNow };
+  /** Force the cloud's copy down, replacing this device's data. */
+  const downloadNow = useCallback(async () => {
+    const credentials = loadStoredCredentials();
+    if (!credentials?.gistId) {
+      setStatus({ state: "error", message: "Sync isn't set up yet." });
+      return;
+    }
+    // Deliberately discarding local edits, so stop them blocking the pull.
+    hasUnpushedChanges.current = false;
+    await pullFromRemote(credentials.pat, credentials.gistId);
+    // The pull replaced the whole database; every hook is holding state
+    // read at mount, so re-seed them the honest way.
+    window.location.reload();
+  }, [pullFromRemote]);
+
+  return { status, isConfigured, configure, uploadNow, downloadNow };
 }

@@ -39,6 +39,7 @@ export function buildTelemetrySamples(
         categoryId: block.categoryId,
         completed: log?.completed ?? false,
         energyLevel: log?.energyLevel,
+        frictionNote: log?.frictionNote,
       });
     }
   }

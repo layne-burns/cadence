@@ -70,6 +70,12 @@ function describe(status: SyncStatus): {
         tone: "text-red-500",
         label: `Sync problem: ${status.message}`,
       };
+    case "conflict":
+      return {
+        icon: <AlertCircle className="size-3.5" />,
+        tone: "text-amber-500",
+        label: "Both this device and another one changed — needs a decision",
+      };
     case "idle":
       return {
         icon: <RefreshCw className="size-3.5" />,

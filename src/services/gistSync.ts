@@ -132,7 +132,9 @@ export async function createGist(
  * newest-first and a duplicate from before this existed should lose to
  * the one in active use.
  */
-export async function findExistingCadenceGist(pat: string): Promise<string | null> {
+export async function findCadenceGists(
+  pat: string,
+): Promise<Array<{ id: string; updatedAt: string }>> {
   const response = await fetch(`${API_BASE}/gists?per_page=100`, {
     headers: authHeaders(pat),
   });
@@ -141,10 +143,19 @@ export async function findExistingCadenceGist(pat: string): Promise<string | nul
   }
   const body = (await response.json()) as Array<{
     id: string;
+    updated_at: string;
     files: Record<string, unknown>;
   }>;
-  const match = body.find((gist) => GIST_FILENAME in (gist.files ?? {}));
-  return match?.id ?? null;
+  return body
+    .filter((gist) => GIST_FILENAME in (gist.files ?? {}))
+    .map((gist) => ({ id: gist.id, updatedAt: gist.updated_at }));
+}
+
+/** Convenience wrapper: the most recently updated Cadence gist, or null.
+ * GitHub returns gists newest-first, so the first match wins. */
+export async function findExistingCadenceGist(pat: string): Promise<string | null> {
+  const gists = await findCadenceGists(pat);
+  return gists[0]?.id ?? null;
 }
 
 export async function fetchGist(
