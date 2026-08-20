@@ -36,6 +36,17 @@ export interface UseTemplatesResult {
     patch: Partial<Omit<RoutineBlock, "id">>,
   ) => Promise<void>;
   removeBlock: (day: DayOfWeek, blockId: string) => Promise<void>;
+  /**
+   * Copies `from`'s blocks and wake/wind-down times onto each day in
+   * `to`, replacing whatever those days held.
+   *
+   * Copies, not links: the pasted blocks get fresh ids and thereafter
+   * have no relationship to the source. Linking would mean editing
+   * Monday silently rewrites Tuesday through Friday, which needs an
+   * unlink concept and a way to see what's linked before it's
+   * predictable. Copies are dumber and never surprise anyone.
+   */
+  copyDayTo: (from: DayOfWeek, to: DayOfWeek[]) => Promise<void>;
 }
 
 export function useTemplates(): UseTemplatesResult {
@@ -176,6 +187,32 @@ export function useTemplates(): UseTemplatesResult {
     [updateBlueprint],
   );
 
+  const copyDayTo = useCallback(
+    async (from: DayOfWeek, to: DayOfWeek[]) => {
+      await updateBlueprint((current) => {
+        const source = current.days[from];
+        const days = { ...current.days };
+        for (const target of to) {
+          if (target === from) continue; // copying a day onto itself is a no-op
+          days[target] = {
+            ...source,
+            day: target,
+            // Fresh ids: block ids must be unique across the blueprint,
+            // and reusing the source's would make two days' blocks
+            // indistinguishable to adherence logging, which keys check-ins
+            // by the rendered id derived from them.
+            blocks: source.blocks.map((block) => ({
+              ...block,
+              id: crypto.randomUUID(),
+            })),
+          };
+        }
+        return { ...current, days };
+      });
+    },
+    [updateBlueprint],
+  );
+
   return {
     blueprint,
     loading,
@@ -187,5 +224,6 @@ export function useTemplates(): UseTemplatesResult {
     addBlock,
     updateBlock,
     removeBlock,
+    copyDayTo,
   };
 }

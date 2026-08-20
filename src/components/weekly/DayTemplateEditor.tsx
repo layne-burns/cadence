@@ -1,14 +1,15 @@
-import { Pencil, Plus, Settings2, Trash2 } from "lucide-react";
+import { Copy, Pencil, Plus, Settings2, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../common/Button";
 import { Input } from "../common/Input";
 import { Modal } from "../common/Modal";
 import { BlockForm } from "./BlockForm";
 import { CategoryManager } from "./CategoryManager";
+import { CopyDayModal } from "./CopyDayModal";
 import { formatMinutes, minutesToTimeInputValue, parseTimeInputToMinutes } from "../../lib/time";
 import { cx } from "../../lib/cx";
 import type { Category, DayOfWeek, RoutineBlock } from "../../types/schedule";
-import type { DayTemplate } from "../../types/template";
+import type { DayTemplate, WeeklyBlueprint } from "../../types/template";
 
 interface DayTemplateEditorProps {
   day: DayOfWeek;
@@ -21,6 +22,8 @@ interface DayTemplateEditorProps {
   onAddCategory: (name: string, color: string) => void;
   onUpdateCategory: (id: string, patch: Partial<Omit<Category, "id">>) => void;
   onRemoveCategory: (id: string) => Promise<boolean> | boolean;
+  blueprint: WeeklyBlueprint;
+  onCopyDayTo: (to: DayOfWeek[]) => void;
 }
 
 export function DayTemplateEditor({
@@ -34,9 +37,12 @@ export function DayTemplateEditor({
   onAddCategory,
   onUpdateCategory,
   onRemoveCategory,
+  blueprint,
+  onCopyDayTo,
 }: DayTemplateEditorProps) {
   const [blockModal, setBlockModal] = useState<"add" | RoutineBlock | null>(null);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [copyModalOpen, setCopyModalOpen] = useState(false);
 
   const categoryById = new Map(categories.map((category) => [category.id, category]));
   const sortedBlocks = [...template.blocks].sort((a, b) => a.startMinutes - b.startMinutes);
@@ -78,9 +84,16 @@ export function DayTemplateEditor({
             ? "No blocks yet"
             : `${sortedBlocks.length} block${sortedBlocks.length === 1 ? "" : "s"}`}
         </h3>
-        <Button size="sm" variant="secondary" onClick={() => setBlockModal("add")}>
-          <Plus className="size-4" /> Add block
-        </Button>
+        <div className="flex gap-2">
+          {sortedBlocks.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={() => setCopyModalOpen(true)}>
+              <Copy className="size-4" /> Copy to…
+            </Button>
+          )}
+          <Button size="sm" variant="secondary" onClick={() => setBlockModal("add")}>
+            <Plus className="size-4" /> Add block
+          </Button>
+        </div>
       </div>
 
       {sortedBlocks.length === 0 ? (
@@ -166,6 +179,16 @@ export function DayTemplateEditor({
           }}
         />
       </Modal>
+
+      <CopyDayModal
+        // Fresh selection state each time it opens.
+        key={copyModalOpen ? `copy-${day}` : "copy-closed"}
+        open={copyModalOpen}
+        from={day}
+        blueprint={blueprint}
+        onClose={() => setCopyModalOpen(false)}
+        onCopy={onCopyDayTo}
+      />
 
       <CategoryManager
         open={categoryModalOpen}

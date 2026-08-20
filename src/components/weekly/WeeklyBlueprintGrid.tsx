@@ -81,6 +81,8 @@ export function WeeklyBlueprintGrid({ templates }: WeeklyBlueprintGridProps) {
         onAddCategory={(name, color) => void templates.addCategory(name, color)}
         onUpdateCategory={(id, patch) => void templates.updateCategory(id, patch)}
         onRemoveCategory={templates.removeCategory}
+        blueprint={templates.blueprint}
+        onCopyDayTo={(to) => void templates.copyDayTo(selectedDay, to)}
       />
     </div>
   );
