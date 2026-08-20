@@ -77,6 +77,19 @@ blueprint**. Splitting/shrinking is computed fresh per day at render time.
   (no field-level merge) unless/until we decide we need more.
 - "Create New Gist Automatically" = `POST /gists` with a private
   `cadence-data.json` gist, then store the returned ID.
+- Implemented in `services/gistSync.ts` (REST client + credential storage)
+  and `hooks/useSync.ts` (lifecycle: auto-pull on mount, debounced
+  auto-push, manual `configure`/`syncNow`). localStorage keys:
+  `cadence.gistPat`, `cadence.gistId`, `cadence.lastKnownRemoteUpdatedAt`
+  (the last one is sync bookkeeping, not a secret, but kept alongside the
+  other two since it's meaningless without them).
+- No settings UI exists yet to actually call `useSync` — it's built and
+  tested (service layer) but not wired into the app, since there's no
+  Header/Settings entry point until Phase 4's layout lands. Wire
+  `GistConfigModal` up to it then; don't rebuild the hook.
+- `tsconfig`'s `erasableSyntaxOnly` disallows TS parameter-property syntax
+  (`constructor(readonly x: T)`) — write class fields out explicitly
+  instead (see `GistSyncError`).
 
 ## Commands
 
@@ -122,7 +135,7 @@ Stack notes:
 - [x] Phase 0 — env diagnostics, `gh` installed, this file
 - [x] Phase 1 — Vite + Tailwind + Lucide + TS types + Vitest scaffold
 - [x] Phase 2 — scheduler.ts collision engine + tests
-- [ ] Phase 3 — db.ts (IndexedDB) + gistSync.ts
+- [x] Phase 3 — db.ts (IndexedDB) + gistSync.ts + useSync.ts
 - [ ] Phase 4 — daily timeline + Now & Next focus UI
 - [ ] Phase 5 — timeShifter.ts + streaks.ts
 - [ ] Phase 6 — blueprint editor + analytics dashboard
