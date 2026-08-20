@@ -1,0 +1,13 @@
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# Never commit secrets — Gist PAT lives in browser localStorage only,
+# but keep this here as a guardrail in case a .env sneaks in later.
+.env
+.env.local
+
+.DS_Store
+Thumbs.db
