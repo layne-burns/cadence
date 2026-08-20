@@ -72,6 +72,21 @@ describe("events", () => {
     await db.deleteEvent("a");
     expect(await db.getAllEvents()).toHaveLength(1);
   });
+
+  it("getEventsInRange returns only events within the inclusive date bounds", async () => {
+    await db.saveEvent(makeEvent({ id: "before", date: "2026-08-20" }));
+    await db.saveEvent(makeEvent({ id: "start-edge", date: "2026-08-24" }));
+    await db.saveEvent(makeEvent({ id: "middle", date: "2026-08-26" }));
+    await db.saveEvent(makeEvent({ id: "end-edge", date: "2026-08-28" }));
+    await db.saveEvent(makeEvent({ id: "after", date: "2026-08-30" }));
+
+    const inRange = await db.getEventsInRange("2026-08-24", "2026-08-28");
+    expect(inRange.map((e) => e.id).sort()).toEqual([
+      "end-edge",
+      "middle",
+      "start-edge",
+    ]);
+  });
 });
 
 describe("adherence logs", () => {
@@ -86,6 +101,15 @@ describe("adherence logs", () => {
 
     await db.deleteAdherenceLog("x");
     expect(await db.getAllAdherenceLogs()).toHaveLength(1);
+  });
+
+  it("getAdherenceLogsInRange returns only logs within the inclusive date bounds", async () => {
+    await db.saveAdherenceLog(makeLog({ id: "before", date: "2026-08-20" }));
+    await db.saveAdherenceLog(makeLog({ id: "in-range", date: "2026-08-25" }));
+    await db.saveAdherenceLog(makeLog({ id: "after", date: "2026-08-30" }));
+
+    const inRange = await db.getAdherenceLogsInRange("2026-08-24", "2026-08-28");
+    expect(inRange.map((l) => l.id)).toEqual(["in-range"]);
   });
 });
 

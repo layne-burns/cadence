@@ -100,6 +100,23 @@ export async function getEventsForDate(date: string): Promise<OneOffEvent[]> {
   return db.getAllFromIndex("events", "by-date", date);
 }
 
+/** Inclusive of both ends. ISO date strings ("YYYY-MM-DD") sort
+ * lexicographically the same as chronologically, so a plain string key
+ * range works — no need to convert to timestamps. Used by the calendar's
+ * 3-day/week/month views to load a whole visible range in one query
+ * instead of one query per visible date. */
+export async function getEventsInRange(
+  startDate: string,
+  endDate: string,
+): Promise<OneOffEvent[]> {
+  const db = await getDb();
+  return db.getAllFromIndex(
+    "events",
+    "by-date",
+    IDBKeyRange.bound(startDate, endDate),
+  );
+}
+
 export async function saveEvent(event: OneOffEvent): Promise<void> {
   const db = await getDb();
   await db.put("events", event);
@@ -122,6 +139,20 @@ export async function getAdherenceLogsForDate(
 ): Promise<AdherenceLog[]> {
   const db = await getDb();
   return db.getAllFromIndex("adherenceLogs", "by-date", date);
+}
+
+/** See getEventsInRange's comment — same "one query for the whole visible
+ * range" rationale, inclusive of both ends. */
+export async function getAdherenceLogsInRange(
+  startDate: string,
+  endDate: string,
+): Promise<AdherenceLog[]> {
+  const db = await getDb();
+  return db.getAllFromIndex(
+    "adherenceLogs",
+    "by-date",
+    IDBKeyRange.bound(startDate, endDate),
+  );
 }
 
 export async function saveAdherenceLog(log: AdherenceLog): Promise<void> {

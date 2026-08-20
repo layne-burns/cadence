@@ -81,3 +81,66 @@ export function formatDateLabel(iso: string): string {
     day: "numeric",
   });
 }
+
+export function addMonthsIso(iso: string, delta: number): string {
+  const date = parseIsoDate(iso);
+  date.setMonth(date.getMonth() + delta);
+  return toIsoDate(date);
+}
+
+/** The Monday on/before `iso` — weeks in this app are Monday-first,
+ * matching `DAYS_OF_WEEK` in types/schedule.ts. */
+export function startOfWeekIso(iso: string): string {
+  const date = parseIsoDate(iso);
+  const day = date.getDay(); // 0 = Sunday .. 6 = Saturday
+  const deltaToMonday = day === 0 ? -6 : 1 - day;
+  date.setDate(date.getDate() + deltaToMonday);
+  return toIsoDate(date);
+}
+
+export function startOfMonthIso(iso: string): string {
+  const date = parseIsoDate(iso);
+  return toIsoDate(new Date(date.getFullYear(), date.getMonth(), 1));
+}
+
+/** A fixed 42-date (6-week) Monday-first grid covering `iso`'s month, with
+ * lead-in/trail-off days from the adjacent months. Always 42 rather than
+ * the tight 4-6 weeks a month actually needs, so the month view's height
+ * doesn't jump around as you navigate between months. */
+export function monthGridDates(iso: string): string[] {
+  const gridStart = startOfWeekIso(startOfMonthIso(iso));
+  return Array.from({ length: 42 }, (_, i) => addDaysIso(gridStart, i));
+}
+
+export function dayNumber(iso: string): number {
+  return parseIsoDate(iso).getDate();
+}
+
+export function formatWeekdayShort(iso: string): string {
+  return parseIsoDate(iso).toLocaleDateString(undefined, { weekday: "short" });
+}
+
+export function formatMonthLabel(iso: string): string {
+  return parseIsoDate(iso).toLocaleDateString(undefined, {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+/** "Aug 19 – 21" for a range within one month, "Aug 30 – Sep 2" across a
+ * month boundary — used for the 3-day/week header label. */
+export function formatDateRangeLabel(startIso: string, endIso: string): string {
+  const start = parseIsoDate(startIso);
+  const end = parseIsoDate(endIso);
+  const startLabel = start.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+  const sameMonth =
+    start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
+  const endLabel = end.toLocaleDateString(
+    undefined,
+    sameMonth ? { day: "numeric" } : { month: "short", day: "numeric" },
+  );
+  return `${startLabel} – ${endLabel}`;
+}

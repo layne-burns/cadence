@@ -48,6 +48,40 @@ blueprint**. Splitting/shrinking is computed fresh per day at render time.
 - The blueprint (weekly template) itself is never written to by this engine —
   it only produces a derived per-day render.
 
+### Calendar multi-view (Day / 3-Day / Week / Month)
+
+Added after Phase 4 as a scope expansion, not one of the original 7
+phases — the bottom-nav tab is `"calendar"` (renamed from `"today"`), and
+the view-mode switcher lives *inside* the Calendar screen itself
+(`CalendarViewSwitcher`), not behind the global settings icon.
+
+- `hooks/useCalendar.ts` is the data layer: one range query (via
+  `db.getEventsInRange`/`getAdherenceLogsInRange`) per visible range
+  instead of one per date, a `viewMode` persisted to localStorage
+  (`cadence.calendarViewMode`), and date-range math in `lib/time.ts`
+  (`startOfWeekIso`, `monthGridDates`, etc — weeks are Monday-first).
+  Month view always renders a fixed 42-date (6-week) grid so the page
+  height doesn't jump between months.
+- Three view components share the engine's per-date `DailyInstance`s:
+  `DayView` (unchanged from Phase 4), `MultiDayView` (3-day and week are
+  the same component — column count is just `dates.length`), and
+  `MonthView` (read-only overview; clicking a day drills into Day view via
+  `jumpToDate`, it doesn't support inline add/complete).
+- **This surfaced a real bug and forced a split**: Focus mode and the
+  Calendar tab used to share one `useSchedule()` instance's `date` state,
+  so browsing Calendar to another day silently changed what Focus treated
+  as "now". Fixed by giving each its own hook instance — `useSchedule()`
+  now powers *only* Focus (its date-nav methods are unused, always stays
+  on the date it initialized with — today), and `useCalendar()` is a
+  separate hook with its own event/adherence CRUD for the browsable
+  Calendar tab. The CRUD logic is duplicated in shape between the two
+  (single-date vs. multi-date-map) rather than shared — see
+  `useCalendar.ts`'s file comment for why, and reconsider if a third
+  consumer of either shape shows up.
+- `Header` is now generic (`label` + optional `onPrev`/`onNext`/`onToday`)
+  instead of hardcoded to a single date — Focus passes just a label with
+  no handlers, so no chevrons render there.
+
 ### Now & Next's "+10 min" and "Skip" (Phase 4, `hooks/useSchedule.ts`)
 
 Implemented as session-local, non-persisted "nudges" — an in-memory

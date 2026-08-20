@@ -1,8 +1,8 @@
-import { CalendarClock, LineChart, ListChecks, Target } from "lucide-react";
+import { CalendarDays, LineChart, ListChecks, Target } from "lucide-react";
 import type { ComponentType } from "react";
 import { cx } from "../../lib/cx";
 
-export type NavView = "today" | "focus" | "analytics" | "blueprint";
+export type NavView = "calendar" | "focus" | "analytics" | "blueprint";
 
 interface Tab {
   id: NavView;
@@ -11,7 +11,7 @@ interface Tab {
 }
 
 const TABS: readonly Tab[] = [
-  { id: "today", label: "Today", icon: CalendarClock },
+  { id: "calendar", label: "Calendar", icon: CalendarDays },
   { id: "focus", label: "Focus", icon: Target },
   { id: "analytics", label: "Analytics", icon: LineChart },
   { id: "blueprint", label: "Blueprint", icon: ListChecks },
