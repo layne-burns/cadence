@@ -11,6 +11,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as db from "../services/db";
 import { createEmptyBlueprint, type WeeklyBlueprint } from "../types/template";
 import type { Category, DayOfWeek, RoutineBlock } from "../types/schedule";
+import { isParent } from "../lib/categories";
+import { applyStarterTaxonomy, type ApplyTaxonomyResult } from "../lib/taxonomy";
 
 export interface UseTemplatesResult {
   blueprint: WeeklyBlueprint;
@@ -18,12 +20,18 @@ export interface UseTemplatesResult {
   updateBlueprint: (
     updater: (current: WeeklyBlueprint) => WeeklyBlueprint,
   ) => Promise<void>;
-  addCategory: (name: string, color: string) => Promise<Category>;
+  addCategory: (name: string, color: string, parentId?: string) => Promise<Category>;
   updateCategory: (id: string, patch: Partial<Omit<Category, "id">>) => Promise<void>;
-  /** Returns false (and makes no change) if the category is still in use
-   * by a block on any day — RoutineBlock.categoryId is required, so
-   * deleting an in-use category would leave a dangling reference. */
-  removeCategory: (id: string) => Promise<boolean>;
+  /**
+   * Returns a reason string when the category can't be removed, or null
+   * on success. Two blockers, both about not leaving dangling references:
+   * a category still used by a block (`RoutineBlock.categoryId` is
+   * required), and a parent that still has subcategories.
+   */
+  removeCategory: (id: string) => Promise<string | null>;
+  /** Adopts the starter taxonomy, preserving the ids of same-named
+   * categories so existing blocks keep resolving. See lib/taxonomy.ts. */
+  applyTaxonomy: () => Promise<ApplyTaxonomyResult>;
   updateDayWindow: (
     day: DayOfWeek,
     wakeMinutes: number,
@@ -84,8 +92,8 @@ export function useTemplates(): UseTemplatesResult {
   );
 
   const addCategory = useCallback(
-    async (name: string, color: string) => {
-      const category: Category = { id: crypto.randomUUID(), name, color };
+    async (name: string, color: string, parentId?: string) => {
+      const category: Category = { id: crypto.randomUUID(), name, color, parentId };
       await updateBlueprint((current) => ({
         ...current,
         categories: [...current.categories, category],
@@ -113,15 +121,24 @@ export function useTemplates(): UseTemplatesResult {
       const inUse = Object.values(current.days).some((day) =>
         day.blocks.some((block) => block.categoryId === id),
       );
-      if (inUse) return false;
+      if (inUse) return "still used by a block";
+      if (isParent(current.categories, id)) {
+        return "still has subcategories";
+      }
       await updateBlueprint((c) => ({
         ...c,
         categories: c.categories.filter((category) => category.id !== id),
       }));
-      return true;
+      return null;
     },
     [updateBlueprint],
   );
+
+  const applyTaxonomy = useCallback(async () => {
+    const result = applyStarterTaxonomy(blueprintRef.current.categories);
+    await updateBlueprint((current) => ({ ...current, categories: result.categories }));
+    return result;
+  }, [updateBlueprint]);
 
   const updateDayWindow = useCallback(
     async (day: DayOfWeek, wakeMinutes: number, windDownMinutes: number) => {
@@ -225,5 +242,6 @@ export function useTemplates(): UseTemplatesResult {
     updateBlock,
     removeBlock,
     copyDayTo,
+    applyTaxonomy,
   };
 }

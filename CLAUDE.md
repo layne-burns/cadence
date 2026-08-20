@@ -184,6 +184,22 @@ Target devices are a laptop and a Samsung Android phone. See the
 made this easy was abandoned by Chrome, so server-free *scheduled* local
 notifications do not exist on the web platform.
 
+## Gotcha: "change in the order of Hooks" during development
+
+If the dev console shows *"React has detected a change in the order of
+Hooks called by App"* followed by *"Should have a queue"*, check whether
+you just edited a hook file with the dev server running. Adding a
+`useCallback`/`useState` to `useTemplates`, `useCalendar`, `useSync` etc.
+shifts every subsequent hook index, and Vite's HMR hot-patches the module
+without remounting — so React compares the old order against the new one
+and throws. It is **not** a real Rules-of-Hooks violation, and it clears
+on a full reload.
+
+Confirm rather than assume: open a **fresh tab** (the console buffer in
+the browser tooling persists across navigations, so old errors linger and
+look current), load the app, cycle every nav tab to mount all the hooks,
+and re-check. This has been chased twice; both times the code was fine.
+
 ## Shipped from the whole-app review (2026-08-20)
 
 A full review was run once the app was complete; the owner picked what to

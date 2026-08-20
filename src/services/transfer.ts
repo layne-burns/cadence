@@ -19,7 +19,8 @@
 
 import type { GistPayload } from "../types/gist";
 import type { AllLocalData } from "./db";
-import { DAYS_OF_WEEK, type DayOfWeek } from "../types/schedule";
+import { DAYS_OF_WEEK, type Category, type DayOfWeek } from "../types/schedule";
+import { validateCategoryTree } from "../lib/categories";
 
 export type ImportResult =
   | { ok: true; payload: GistPayload }
@@ -73,7 +74,19 @@ function checkBlueprint(value: unknown, errors: string[]): void {
       if (typeof category.id !== "string") errors.push(`${path}.id must be a string`);
       if (typeof category.name !== "string") errors.push(`${path}.name must be a string`);
       if (typeof category.color !== "string") errors.push(`${path}.color must be a string`);
+      if (category.parentId !== undefined && typeof category.parentId !== "string") {
+        errors.push(`${path}.parentId must be a string when present`);
+      }
     });
+
+    // Structural checks on the two-level tree (dangling parents, depth,
+    // self-reference). Only worth running once the per-category shape
+    // above is sound, or it would report noise on top of noise.
+    if (errors.length === 0) {
+      for (const problem of validateCategoryTree(value.categories as Category[])) {
+        errors.push(`blueprint.categories: ${problem.message}`);
+      }
+    }
   }
 
   if (!isRecord(value.days)) {

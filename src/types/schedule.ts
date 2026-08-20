@@ -35,14 +35,31 @@ export const DAYS_OF_WEEK: readonly DayOfWeek[] = [
   "sunday",
 ];
 
-/** User-defined grouping for blocks — colors and names are set in the setup
- * wizard, not hardcoded, so "Deep Research" / "Chores" / etc. are examples,
- * not a fixed enum. */
+/**
+ * User-defined grouping for blocks — colors and names are set by the user,
+ * not hardcoded, so the starter taxonomy in `lib/taxonomy.ts` is a
+ * suggestion rather than a fixed enum.
+ *
+ * Categories form a **two-level** tree via `parentId`. It's a flat list
+ * with parent references rather than nested objects because blocks
+ * reference a category by id and don't care where it sits — nesting the
+ * storage would mean every lookup walks a tree for no gain.
+ */
 export interface Category {
   id: string;
   name: string;
   /** Any valid CSS color (hex, oklch, etc.) — rendered as-is. */
   color: string;
+  /**
+   * The parent category, for a subcategory. Absent means top-level.
+   *
+   * Exactly two levels are supported: a category with a `parentId` must
+   * not itself be a parent. Depth is capped because the UI, the analytics
+   * roll-up, and the block picker all assume "parent › child" — arbitrary
+   * depth would complicate all three to express something nobody asked
+   * for. `isValidCategoryTree` in lib/categories.ts enforces it.
+   */
+  parentId?: string;
 }
 
 /** `fixed` blocks/events never move under the "running late" push tool.

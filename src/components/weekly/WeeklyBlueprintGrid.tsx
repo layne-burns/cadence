@@ -78,7 +78,10 @@ export function WeeklyBlueprintGrid({ templates }: WeeklyBlueprintGridProps) {
           void templates.updateBlock(selectedDay, blockId, patch)
         }
         onRemoveBlock={(blockId) => void templates.removeBlock(selectedDay, blockId)}
-        onAddCategory={(name, color) => void templates.addCategory(name, color)}
+        onAddCategory={(name, color, parentId) =>
+          void templates.addCategory(name, color, parentId)
+        }
+        onApplyTaxonomy={() => void templates.applyTaxonomy()}
         onUpdateCategory={(id, patch) => void templates.updateCategory(id, patch)}
         onRemoveCategory={templates.removeCategory}
         blueprint={templates.blueprint}

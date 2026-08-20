@@ -19,9 +19,10 @@ interface DayTemplateEditorProps {
   onAddBlock: (block: Omit<RoutineBlock, "id">) => void;
   onUpdateBlock: (blockId: string, patch: Partial<Omit<RoutineBlock, "id">>) => void;
   onRemoveBlock: (blockId: string) => void;
-  onAddCategory: (name: string, color: string) => void;
+  onAddCategory: (name: string, color: string, parentId?: string) => void;
   onUpdateCategory: (id: string, patch: Partial<Omit<Category, "id">>) => void;
-  onRemoveCategory: (id: string) => Promise<boolean> | boolean;
+  onRemoveCategory: (id: string) => Promise<string | null> | string | null;
+  onApplyTaxonomy: () => void;
   blueprint: WeeklyBlueprint;
   onCopyDayTo: (to: DayOfWeek[]) => void;
 }
@@ -37,6 +38,7 @@ export function DayTemplateEditor({
   onAddCategory,
   onUpdateCategory,
   onRemoveCategory,
+  onApplyTaxonomy,
   blueprint,
   onCopyDayTo,
 }: DayTemplateEditorProps) {
@@ -197,6 +199,7 @@ export function DayTemplateEditor({
         onAdd={onAddCategory}
         onUpdate={onUpdateCategory}
         onRemove={onRemoveCategory}
+        onApplyTaxonomy={onApplyTaxonomy}
       />
     </div>
   );

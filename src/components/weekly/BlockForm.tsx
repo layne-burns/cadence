@@ -3,6 +3,7 @@ import { Button } from "../common/Button";
 import { Input } from "../common/Input";
 import { Select } from "../common/Select";
 import { minutesToTimeInputValue, parseTimeInputToMinutes } from "../../lib/time";
+import { buildCategoryTree } from "../../lib/categories";
 import type { Category, Flexibility, RoutineBlock } from "../../types/schedule";
 
 interface BlockFormProps {
@@ -80,11 +81,26 @@ export function BlockForm({
           value={categoryId}
           onChange={(event) => setCategoryId(event.target.value)}
         >
-          {categories.map((category) => (
-            <option key={category.id} value={category.id}>
-              {category.name}
-            </option>
-          ))}
+          {/* Parents are selectable options in their own right, not just
+              optgroup labels — a block is allowed to sit on "Academics"
+              without picking a subcategory, so forcing a leaf here would
+              contradict the data model. */}
+          {buildCategoryTree(categories).map(({ category, children }) =>
+            children.length === 0 ? (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ) : (
+              <optgroup key={category.id} label={category.name}>
+                <option value={category.id}>{category.name} (general)</option>
+                {children.map((child) => (
+                  <option key={child.id} value={child.id}>
+                    {child.name}
+                  </option>
+                ))}
+              </optgroup>
+            ),
+          )}
         </Select>
       )}
 
