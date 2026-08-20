@@ -1,11 +1,13 @@
-import { Plus } from "lucide-react";
+import { AlarmClockOff, Plus } from "lucide-react";
 import { useState } from "react";
 import type { DailyInstance, RenderedBlock } from "../../types/schedule";
 import type { AdherenceLog } from "../../types/adherence";
 import type { NewEventInput } from "../../hooks/useSchedule";
+import type { PushDeltaMinutes } from "../../engine/timeShifter";
 import { TimeblockCard } from "./TimeblockCard";
 import { TimeGridRuler } from "./TimeGridRuler";
 import { EventForm } from "./EventForm";
+import { TimeShifterModal } from "./TimeShifterModal";
 import { Modal } from "../common/Modal";
 import { Button } from "../common/Button";
 import { minutesSinceMidnight } from "../../lib/time";
@@ -20,6 +22,9 @@ interface DayViewProps {
   getLogForBlock: (id: string) => AdherenceLog | undefined;
   onToggleComplete: (block: RenderedBlock) => void;
   onAddEvent: (values: NewEventInput) => void;
+  /** "Running late?" push — only meaningful (and only rendered) for
+   * today, since it shifts blocks relative to the current time. */
+  onPushSchedule?: (delta: PushDeltaMinutes) => void;
 }
 
 export function DayView({
@@ -29,8 +34,10 @@ export function DayView({
   getLogForBlock,
   onToggleComplete,
   onAddEvent,
+  onPushSchedule,
 }: DayViewProps) {
   const [addingEvent, setAddingEvent] = useState(false);
+  const [runningLate, setRunningLate] = useState(false);
   const { wakeMinutes, windDownMinutes, blocks } = instance;
   const height = Math.max(windDownMinutes - wakeMinutes, 0) * PIXELS_PER_MINUTE;
   const nowMinutes = minutesSinceMidnight(now);
@@ -43,9 +50,16 @@ export function DayView({
         <h2 className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
           {scheduledCount === 0 ? "Nothing scheduled" : `${scheduledCount} block${scheduledCount === 1 ? "" : "s"}`}
         </h2>
-        <Button size="sm" variant="secondary" onClick={() => setAddingEvent(true)}>
-          <Plus className="size-4" /> Add event
-        </Button>
+        <div className="flex gap-2">
+          {isToday && onPushSchedule && (
+            <Button size="sm" variant="secondary" onClick={() => setRunningLate(true)}>
+              <AlarmClockOff className="size-4" /> Running late?
+            </Button>
+          )}
+          <Button size="sm" variant="secondary" onClick={() => setAddingEvent(true)}>
+            <Plus className="size-4" /> Add event
+          </Button>
+        </div>
       </div>
 
       {blocks.length === 0 ? (
@@ -105,6 +119,14 @@ export function DayView({
           }}
         />
       </Modal>
+
+      {onPushSchedule && (
+        <TimeShifterModal
+          open={runningLate}
+          onClose={() => setRunningLate(false)}
+          onPush={onPushSchedule}
+        />
+      )}
     </div>
   );
 }

@@ -96,23 +96,49 @@ through the rest of the day and doesn't survive a reload. Phase 5's
 cascading, protects fixed events); when it lands, decide whether these
 Now & Next buttons should call into it instead of the nudge map.
 
-### Running Late / Push Schedule (`engine/timeShifter.ts`)
+### Running Late / Push Schedule (`engine/timeShifter.ts`) — Phase 5, done
 
-- Shifts all remaining **unfinished, flexible** blocks forward by
-  15/30/45/60 min.
-- **Fixed one-off events never move.** Flexible blocks shift around them
-  (i.e. this reruns collision logic against the now-shifted blocks).
-- If the push runs past the day's wind-down time, compress the
-  lowest-priority buffer blocks at the end of the day first — don't just
-  silently truncate real routine blocks.
+- `pushSchedule(date, dayOfWeek, template, events, nowMinutes, delta)`
+  shifts every **flexible routine block starting at/after `nowMinutes`**
+  forward by 15/30/45/60 min, then re-renders via `renderDailyInstance` so
+  collisions against the (unmoved) fixed events are recomputed fresh —
+  no separate "already split" bookkeeping needed.
+- A block that's already in progress (started before `nowMinutes`) is left
+  alone on purpose — that's Now & Next's "+10 min" territory, not this
+  tool's. **Fixed one-off events never move**, matching the collision
+  engine's own event handling.
+- `compressToFit` best-effort-reclaims trailing time if the push runs past
+  wind-down. **Only the actual tail block can ever reduce the day's end
+  time** — blocks don't overlap, so whichever one starts latest also ends
+  latest; shrinking some earlier block separated by a gap can't move
+  anything after it, so it's a no-op for this purpose. Compression only
+  continues past the tail when a fully-consumed *buffer* block gets
+  removed, genuinely exposing the block before it as the new tail. A
+  flexible routine block stops at the 10-minute floor (reusing
+  `MIN_FRAGMENT_MINUTES` from scheduler.ts) and is never removed. Read the
+  file-level comment before touching this function — the "why only the
+  tail" reasoning isn't obvious from the code alone.
+- UI: `TimeShifterModal` (single tap, no confirmation) + a "Running late?"
+  button in `DayView`, shown only when viewing today. Applied via
+  `useCalendar`'s `pushToday` as a session-local override (same pattern as
+  Focus's nudges) — not persisted, cleared whenever the visible range
+  reloads.
 
-### Soft streaks (`engine/streaks.ts`)
+### Soft streaks (`engine/streaks.ts`) — Phase 5, engine done; UI is Phase 6
 
-- A day counts as a "success" if ≥75% of that day's active scheduled routine
-  blocks were checked off.
-- Missing the threshold consumes a **Grace Day** instead of resetting the
-  streak — max 1 grace day per rolling 7-day window. Track grace-day usage
-  as a rolling window, not a fixed weekly bucket that resets on Monday.
+- `computeCompletionRatio`/`computeDayOutcome`/`applyDayOutcome`/`recordDay`
+  are pure and fully tested. A block counts toward the ratio if it's
+  `kind !== "buffer"` — both routine blocks *and* one-off events count as
+  real commitments; only synthesized filler is excluded.
+- A day "succeeds" at ≥75% (`SUCCESS_THRESHOLD`). A miss spends a grace day
+  if none was used in the trailing 7 days (`daysBetween(...) < 7`); if one
+  was already spent, the streak resets to 0. `longestStreak` never
+  decreases. `graceDayDatesUsed` is pruned at 14 days (margin over the
+  7-day window), `history` capped at 400 entries.
+- **Nothing calls `recordDay` yet.** There's no "close out the day"
+  trigger and no streak display — that's `StreakCard` and the rest of the
+  analytics dashboard, explicitly Phase 6 in the original spec. Wire it up
+  there; the engine functions are ready to be called.
 
 ### Gist sync (`services/gistSync.ts`)
 
@@ -184,6 +210,7 @@ Stack notes:
 - [x] Phase 2 — scheduler.ts collision engine + tests
 - [x] Phase 3 — db.ts (IndexedDB) + gistSync.ts + useSync.ts
 - [x] Phase 4 — daily timeline + Now & Next focus UI
-- [ ] Phase 5 — timeShifter.ts + streaks.ts
+- [x] Phase 5 — timeShifter.ts + streaks.ts (+ unplanned Calendar
+      multi-view: Day/3-Day/Week/Month, done between Phase 4 and 5)
 - [ ] Phase 6 — blueprint editor + analytics dashboard
 - [ ] Phase 7 — PWA manifest/SW, import/export, GitHub Pages deploy

@@ -1,0 +1,130 @@
+/**
+ * The "running late" push tool: shift today's remaining flexible blocks
+ * forward by 15/30/45/60 minutes, then re-render so the collision engine
+ * naturally re-splits/re-shrinks them against whatever fixed events are
+ * still ahead. If that push runs the day past wind-down, best-effort
+ * compress trailing buffer/flexible time to try to make it fit.
+ *
+ * Compression is the subtle part, worth spelling out: only the block that
+ * currently ends *last* in the day can affect whether the day now ends
+ * past wind-down — because blocks never overlap, whichever one starts
+ * latest also ends latest. Shrinking some *other*, earlier block (even a
+ * buffer block sitting right next to a gap) does not move anything after
+ * it, so it cannot reduce how late the day ends. That means compression
+ * only ever touches the tail block — and only continues on to the
+ * previous block if the tail buffer gets fully consumed and removed,
+ * genuinely exposing that previous block as the new tail. A flexible
+ * routine block that's shrunk down to the 10-minute floor stays put
+ * (never removed) and stops the process there, even if overflow remains.
+ */
+
+import { MIN_FRAGMENT_MINUTES, renderDailyInstance } from "./scheduler";
+import type {
+  DailyInstance,
+  DayOfWeek,
+  OneOffEvent,
+  RenderedBlock,
+} from "../types/schedule";
+import type { DayTemplate } from "../types/template";
+
+export type PushDeltaMinutes = 15 | 30 | 45 | 60;
+
+export interface PushScheduleResult {
+  instance: DailyInstance;
+  /** Minutes still hanging past wind-down after best-effort compression —
+   * 0 means everything fit. */
+  overflowMinutes: number;
+}
+
+function isCompressible(block: RenderedBlock): boolean {
+  if (block.kind === "buffer") return true;
+  if (block.kind === "routine") return block.flexibility === "flexible";
+  return false; // "event" — fixed, one-offs never move or shrink
+}
+
+/** Best-effort: shrinks (and, for fully-consumed buffers, removes)
+ * trailing blocks until the day's end fits within `windDownMinutes` or
+ * nothing more can be reclaimed. See the file-level comment for why this
+ * only ever touches the tail. */
+export function compressToFit(
+  blocks: RenderedBlock[],
+  windDownMinutes: number,
+): { blocks: RenderedBlock[]; overflowMinutes: number } {
+  const result = [...blocks];
+
+  while (result.length > 0) {
+    const tail = result[result.length - 1] as RenderedBlock;
+    const overflow = tail.endMinutes - windDownMinutes;
+    if (overflow <= 0) {
+      return { blocks: result, overflowMinutes: 0 };
+    }
+
+    if (!isCompressible(tail)) {
+      // Can't touch a fixed event or a fixed routine block — whatever
+      // overflow remains because of it is final.
+      return { blocks: result, overflowMinutes: overflow };
+    }
+
+    const floor = tail.kind === "buffer" ? 0 : MIN_FRAGMENT_MINUTES;
+    const duration = tail.endMinutes - tail.startMinutes;
+    const capacity = Math.max(0, duration - floor);
+    const reclaim = Math.min(overflow, capacity);
+    const newEnd = tail.endMinutes - reclaim;
+    const newDuration = newEnd - tail.startMinutes;
+
+    if (tail.kind === "buffer" && newDuration <= 0) {
+      // Fully consumed — drop it and let whatever comes before it become
+      // the new tail; that block's own end might independently still
+      // need shrinking too, so loop rather than returning.
+      result.pop();
+      continue;
+    }
+
+    result[result.length - 1] = { ...tail, endMinutes: newEnd };
+    return { blocks: result, overflowMinutes: Math.max(0, overflow - reclaim) };
+  }
+
+  return { blocks: result, overflowMinutes: 0 };
+}
+
+/**
+ * Shifts every flexible routine block starting at or after `nowMinutes`
+ * forward by `deltaMinutes`, re-renders the day against the (unmoved)
+ * events, and best-effort compresses the tail to fit wind-down.
+ *
+ * Blocks that have already started (startMinutes < nowMinutes) are left
+ * alone — this tool is for pushing what's still ahead, not for extending
+ * whatever's in progress right now (that's Now & Next's "+10 min").
+ */
+export function pushSchedule(
+  date: string,
+  dayOfWeek: DayOfWeek,
+  template: DayTemplate,
+  events: OneOffEvent[],
+  nowMinutes: number,
+  deltaMinutes: PushDeltaMinutes,
+): PushScheduleResult {
+  const shiftedBlocks = template.blocks.map((block) =>
+    block.flexibility === "flexible" && block.startMinutes >= nowMinutes
+      ? {
+          ...block,
+          startMinutes: block.startMinutes + deltaMinutes,
+          endMinutes: block.endMinutes + deltaMinutes,
+        }
+      : block,
+  );
+
+  const rendered = renderDailyInstance(
+    date,
+    dayOfWeek,
+    { ...template, blocks: shiftedBlocks },
+    events,
+  );
+
+  const { blocks, overflowMinutes } = compressToFit(
+    rendered.blocks,
+    template.windDownMinutes,
+  );
+
+  return { instance: { ...rendered, blocks }, overflowMinutes };
+}

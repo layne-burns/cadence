@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as db from "../services/db";
 import { renderDailyInstance } from "../engine/scheduler";
+import { pushSchedule, type PushDeltaMinutes } from "../engine/timeShifter";
 import { useTemplates } from "./useTemplates";
 import type { NewEventInput } from "./useSchedule";
 import {
@@ -78,6 +79,12 @@ export interface UseCalendarResult {
   getLogForBlock: (date: string, blockId: string) => AdherenceLog | undefined;
   toggleComplete: (date: string, block: RenderedBlock) => Promise<void>;
   addEvent: (date: string, input: NewEventInput) => Promise<void>;
+  /** "Running late?" — re-renders *today* with its remaining flexible
+   * blocks pushed forward by `deltaMinutes` (see engine/timeShifter.ts).
+   * Session-local only, like Focus's nudges: not persisted, and reset
+   * whenever the visible range's data reloads. Only meaningful — and only
+   * wired up in the UI — while viewing today. */
+  pushToday: (nowMinutes: number, deltaMinutes: PushDeltaMinutes) => void;
 }
 
 export function useCalendar(): UseCalendarResult {
@@ -87,6 +94,7 @@ export function useCalendar(): UseCalendarResult {
   const [events, setEvents] = useState<OneOffEvent[]>([]);
   const [logs, setLogs] = useState<AdherenceLog[]>([]);
   const [rangeLoading, setRangeLoading] = useState(true);
+  const [pushOverride, setPushOverride] = useState<DailyInstance | null>(null);
 
   const visibleDates = useMemo(
     () => visibleDatesFor(viewMode, anchorDate),
@@ -101,6 +109,7 @@ export function useCalendar(): UseCalendarResult {
     // effect, and the same false-positive from oxlint's set-state-in-effect
     // rule — see that file's comment for why this is the right pattern.
     setRangeLoading(true);
+    setPushOverride(null); // a reload invalidates any pending push override
     void Promise.all([
       db.getEventsInRange(rangeStart, rangeEnd),
       db.getAdherenceLogsInRange(rangeStart, rangeEnd),
@@ -123,13 +132,17 @@ export function useCalendar(): UseCalendarResult {
   const instances = useMemo(() => {
     const map: Record<string, DailyInstance> = {};
     for (const date of visibleDates) {
+      if (pushOverride && pushOverride.date === date) {
+        map[date] = pushOverride;
+        continue;
+      }
       const dayOfWeek = dayOfWeekForIso(date);
       const template = blueprint.days[dayOfWeek];
       const eventsForDate = events.filter((event) => event.date === date);
       map[date] = renderDailyInstance(date, dayOfWeek, template, eventsForDate);
     }
     return map;
-  }, [visibleDates, blueprint, events]);
+  }, [visibleDates, blueprint, events, pushOverride]);
 
   const goPrev = useCallback(() => {
     if (viewMode === "month") {
@@ -189,6 +202,25 @@ export function useCalendar(): UseCalendarResult {
     await db.saveEvent(event);
   }, []);
 
+  const pushToday = useCallback(
+    (nowMinutes: number, deltaMinutes: PushDeltaMinutes) => {
+      const todayIso = toIsoDate(new Date());
+      const dayOfWeek = dayOfWeekForIso(todayIso);
+      const template = blueprint.days[dayOfWeek];
+      const eventsToday = events.filter((event) => event.date === todayIso);
+      const { instance } = pushSchedule(
+        todayIso,
+        dayOfWeek,
+        template,
+        eventsToday,
+        nowMinutes,
+        deltaMinutes,
+      );
+      setPushOverride(instance);
+    },
+    [blueprint, events],
+  );
+
   return {
     viewMode,
     setViewMode,
@@ -203,5 +235,6 @@ export function useCalendar(): UseCalendarResult {
     getLogForBlock,
     toggleComplete,
     addEvent,
+    pushToday,
   };
 }

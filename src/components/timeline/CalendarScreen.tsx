@@ -1,5 +1,5 @@
 import type { UseCalendarResult } from "../../hooks/useCalendar";
-import { toIsoDate } from "../../lib/time";
+import { minutesSinceMidnight, toIsoDate } from "../../lib/time";
 import { CalendarViewSwitcher } from "./CalendarViewSwitcher";
 import { DayView } from "./DayView";
 import { MonthView } from "./MonthView";
@@ -12,6 +12,7 @@ interface CalendarScreenProps {
 
 export function CalendarScreen({ calendar, now }: CalendarScreenProps) {
   const today = toIsoDate(now);
+  const nowMinutes = minutesSinceMidnight(now);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -34,6 +35,11 @@ export function CalendarScreen({ calendar, now }: CalendarScreenProps) {
           getLogForBlock={(blockId) => calendar.getLogForBlock(calendar.anchorDate, blockId)}
           onToggleComplete={(block) => void calendar.toggleComplete(calendar.anchorDate, block)}
           onAddEvent={(values) => void calendar.addEvent(calendar.anchorDate, values)}
+          onPushSchedule={
+            calendar.anchorDate === today
+              ? (delta) => calendar.pushToday(nowMinutes, delta)
+              : undefined
+          }
         />
       ) : calendar.viewMode === "month" ? (
         <MonthView
