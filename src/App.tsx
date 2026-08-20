@@ -85,6 +85,9 @@ function App() {
         onPrev={view === "calendar" ? calendar.goPrev : undefined}
         onNext={view === "calendar" ? calendar.goNext : undefined}
         onToday={view === "calendar" ? calendar.goToday : undefined}
+        syncStatus={sync.status}
+        syncConfigured={sync.isConfigured}
+        onOpenSync={() => setView("settings")}
       />
 
       {/* min-h-0 overrides the flex item's default auto min-height — without

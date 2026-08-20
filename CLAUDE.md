@@ -184,6 +184,65 @@ Target devices are a laptop and a Samsung Android phone. See the
 made this easy was abandoned by Chrome, so server-free *scheduled* local
 notifications do not exist on the web platform.
 
+## Cloud storage: why Gist, and why not Google Drive
+
+Researched 2026-08-20 after the owner asked about "free cloud storage",
+mentioning they pay for Google AI Pro. Recording it so it isn't
+re-litigated.
+
+**Storage size is not the problem.** A full export is ~11 KB; years of
+adherence logs stay in single-digit MB. Any free tier anywhere is
+oversized for this. The real problem is *sync plumbing*, and the owner's
+actual requirement is **"quick and seamless syncing between devices"**.
+
+**A paid Google plan buys no API capability.** The Drive API is free for
+everyone; Google One / AI Pro buys storage quota, which isn't the
+constraint. Worth stating plainly — it's a natural assumption.
+
+Google Drive (`drive.appdata`, which hides the file from the user's Drive
+UI) is technically a fine backend, and its appeal is UX: "Sign in with
+Google" beats pasting a token, especially on a phone. It was **not**
+chosen because the setup actively fights the stated requirement — it
+needs a Google Cloud project and OAuth consent screen, and an app in
+"Testing" status has its refresh tokens
+[revoked every 7 days](https://www.unipile.com/google-oauth-refresh-token/),
+while moving to "Production" with Drive scopes can trigger verification
+review. Re-authenticating weekly is the opposite of seamless.
+
+Gist stays the backend. If Drive is ever revisited, add it as a second
+provider behind the same interface rather than replacing this one.
+
+## What "seamless" required beyond the Phase 3 sync
+
+The original sync only checked the remote **once, at cold start**. Edit
+on the laptop and the phone stayed stale until fully reloaded — fine for
+backup, useless for multi-device use. Added:
+
+- **Pull on focus and visibility change**, which is the case that
+  actually matters (picking up the phone after working on the laptop),
+  plus a 60s poll while the tab is visible. The poll checks
+  `document.visibilityState` so a backgrounded phone tab isn't burning
+  battery polling for changes nobody is looking at.
+- **A pull that finds new data reloads the page.** Every hook read its
+  slice of IndexedDB at mount, so replacing the database underneath them
+  leaves the UI showing stale state. Same reasoning as the JSON import.
+- **`hasUnpushedChanges` blocks auto-pull** while a local edit hasn't
+  reached the remote. A pull replaces the *entire* local database, so
+  pulling with an unpushed edit outstanding would silently destroy it.
+  Being briefly stale is strictly better than losing work.
+- **Pending pushes flush on page-hide** rather than trusting the 2s
+  debounce to beat a tab being frozen. Closing a phone app right after
+  ticking something off is completely normal.
+- **A header sync indicator**, hidden until sync is configured. Without
+  it the only way to know devices were in step was to open Settings and
+  read a status line — which defeats "seamless", since you end up
+  checking manually anyway.
+
+**Still last-write-wins on the whole payload.** Two devices editing while
+both offline will still have one silently lose. Aggressive pulling makes
+that window much smaller but does not close it; per-entity merge is the
+real fix and remains unbuilt.
+
 ## Gotcha: "change in the order of Hooks" during development
 
 If the dev console shows *"React has detected a change in the order of

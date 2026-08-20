@@ -1,4 +1,6 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { SyncIndicator } from "./SyncIndicator";
+import type { SyncStatus } from "../../types/gist";
 
 interface HeaderProps {
   label: string;
@@ -10,9 +12,21 @@ interface HeaderProps {
   onPrev?: () => void;
   onNext?: () => void;
   onToday?: () => void;
+  syncStatus: SyncStatus;
+  syncConfigured: boolean;
+  onOpenSync: () => void;
 }
 
-export function Header({ label, showTodayLink, onPrev, onNext, onToday }: HeaderProps) {
+export function Header({
+  label,
+  showTodayLink,
+  onPrev,
+  onNext,
+  onToday,
+  syncStatus,
+  syncConfigured,
+  onOpenSync,
+}: HeaderProps) {
   return (
     <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
       <div className="flex items-center gap-2">
@@ -47,10 +61,13 @@ export function Header({ label, showTodayLink, onPrev, onNext, onToday }: Header
           </button>
         )}
       </div>
-      {/* Settings moved to its own bottom-nav tab — nothing lives on the
-          right side of the header now, but the flex container stays so the
-          label keeps its left alignment. */}
-      <span />
+      {/* Settings has its own bottom-nav tab; the only thing earning
+          header space is sync state, which needs to be glanceable. */}
+      <SyncIndicator
+        status={syncStatus}
+        isConfigured={syncConfigured}
+        onClick={onOpenSync}
+      />
     </header>
   );
 }

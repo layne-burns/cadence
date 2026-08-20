@@ -33,6 +33,10 @@ import type { GistPayload, SyncStatus } from "../types/gist";
 import { createDefaultSettings } from "../types/settings";
 
 const PUSH_DEBOUNCE_MS = 2000;
+/** How often to re-check the remote while the app is open and visible.
+ * 60s is frequent enough that switching devices feels current, and rare
+ * enough to be invisible on a phone battery. */
+const REMOTE_POLL_MS = 60_000;
 const LAST_KNOWN_REMOTE_UPDATED_AT_KEY = "cadence.lastKnownRemoteUpdatedAt";
 
 function buildPayload(data: db.AllLocalData): GistPayload {
@@ -84,6 +88,16 @@ export function useSync(): UseSyncResult {
   );
   const pushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const skipNextPush = useRef(true); // don't push on initial mount
+  /**
+   * True between a local change and its push landing. Auto-pull refuses
+   * to run while it's set: pulling replaces the entire local database, so
+   * doing it with an unpushed edit outstanding would silently discard
+   * that edit. Better to be briefly stale than to lose work.
+   */
+  const hasUnpushedChanges = useRef(false);
+  /** Guards against overlapping checks — a focus event and the interval
+   * can easily fire together. */
+  const checkInFlight = useRef(false);
 
   const changeSignal = useSyncExternalStore(
     db.subscribeToDataChanges,
@@ -120,35 +134,90 @@ export function useSync(): UseSyncResult {
       const local = await db.exportAllData();
       const { updatedAt } = await pushGist(pat, gistId, buildPayload(local));
       writeLastKnownRemoteUpdatedAt(updatedAt);
+      hasUnpushedChanges.current = false;
       setStatus({ state: "synced", lastSyncedAt: new Date().toISOString() });
     } catch (error) {
       setStatus(errorToStatus(error));
     }
   }, []);
 
-  // Auto-pull on launch — runs once, deliberately not tied to the change
-  // signal: this is "check what the remote has right now", independent of
-  // anything changing locally.
-  useEffect(() => {
+  /**
+   * Checks whether the remote has moved on and pulls if so. This is what
+   * makes multi-device use feel seamless: without it the app only looked
+   * at the remote once per cold start, so an edit made on the laptop was
+   * invisible on the phone until the phone app was fully reloaded.
+   *
+   * Skipped entirely when there are unpushed local changes — see
+   * `hasUnpushedChanges`.
+   */
+  const checkRemoteForUpdates = useCallback(async () => {
+    if (checkInFlight.current || hasUnpushedChanges.current) return;
     const credentials = loadStoredCredentials();
     if (!credentials?.gistId) return;
     const { pat, gistId } = credentials;
 
-    void (async () => {
-      setStatus({ state: "syncing" });
-      try {
-        const { updatedAt } = await fetchGist(pat, gistId);
-        if (shouldPullBeforePush(readLastKnownRemoteUpdatedAt(), updatedAt)) {
-          await pullFromRemote(pat, gistId);
-        } else {
-          writeLastKnownRemoteUpdatedAt(updatedAt);
-          setStatus({ state: "synced", lastSyncedAt: new Date().toISOString() });
-        }
-      } catch (error) {
-        setStatus(errorToStatus(error));
+    checkInFlight.current = true;
+    try {
+      const { updatedAt } = await fetchGist(pat, gistId);
+      if (shouldPullBeforePush(readLastKnownRemoteUpdatedAt(), updatedAt)) {
+        await pullFromRemote(pat, gistId);
+        // Every hook read its slice of the database at mount, so a pull
+        // that replaced everything leaves the UI showing stale data. A
+        // reload is the honest way to re-seed all of them, and it only
+        // happens when the remote genuinely moved.
+        window.location.reload();
+      } else {
+        writeLastKnownRemoteUpdatedAt(updatedAt);
+        setStatus({ state: "synced", lastSyncedAt: new Date().toISOString() });
       }
-    })();
+    } catch (error) {
+      setStatus(errorToStatus(error));
+    } finally {
+      checkInFlight.current = false;
+    }
   }, [pullFromRemote]);
+
+  // Auto-pull on launch, and again whenever the app comes back to the
+  // foreground or has been open a while. Focus/visibility is the one that
+  // matters in practice — picking the phone up after working on the
+  // laptop is exactly when the local copy is stale.
+  useEffect(() => {
+    if (!loadStoredCredentials()?.gistId) return;
+
+    void checkRemoteForUpdates();
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void checkRemoteForUpdates();
+        return;
+      }
+      // Going away: flush a pending debounced push now rather than
+      // gambling that the 2s timer beats the tab being frozen. Closing a
+      // phone app right after ticking something off is normal, and that
+      // change reaching the remote is the whole point of syncing.
+      if (hasUnpushedChanges.current && pushTimer.current) {
+        clearTimeout(pushTimer.current);
+        pushTimer.current = null;
+        const credentials = loadStoredCredentials();
+        if (credentials?.gistId) {
+          void pushToRemote(credentials.pat, credentials.gistId);
+        }
+      }
+    };
+    const interval = setInterval(() => {
+      // Only while actually on screen; polling a backgrounded tab burns
+      // the phone's battery for a change nobody is looking at.
+      if (document.visibilityState === "visible") void checkRemoteForUpdates();
+    }, REMOTE_POLL_MS);
+
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [checkRemoteForUpdates, pushToRemote]);
 
   // Debounced auto-push, 2s after the last local change.
   useEffect(() => {
@@ -159,6 +228,11 @@ export function useSync(): UseSyncResult {
     const credentials = loadStoredCredentials();
     if (!credentials?.gistId) return;
     const { pat, gistId } = credentials;
+
+    // Set before the debounce, not after it fires: the whole point is to
+    // block an auto-pull during the window where a change exists locally
+    // but hasn't reached the remote yet.
+    hasUnpushedChanges.current = true;
 
     if (pushTimer.current) clearTimeout(pushTimer.current);
     pushTimer.current = setTimeout(() => {
