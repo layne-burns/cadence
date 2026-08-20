@@ -11,13 +11,19 @@
  * hooks; they operate over different data shapes (one date vs. a map of
  * dates) so sharing it cleanly would need a bigger refactor than this
  * feature warranted. Worth revisiting if a third consumer shows up.
+ *
+ * Takes `templates` as a parameter rather than calling `useTemplates()`
+ * itself, for the same reason `useSchedule` now does — see that file's
+ * comment. Phase 6's blueprint editor is a third independent caller of
+ * blueprint state, and without a shared instance, edits made there
+ * wouldn't show up here until a full reload.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as db from "../services/db";
 import { renderDailyInstance } from "../engine/scheduler";
 import { pushSchedule, type PushDeltaMinutes } from "../engine/timeShifter";
-import { useTemplates } from "./useTemplates";
+import type { UseTemplatesResult } from "./useTemplates";
 import type { NewEventInput } from "./useSchedule";
 import {
   addDaysIso,
@@ -87,8 +93,8 @@ export interface UseCalendarResult {
   pushToday: (nowMinutes: number, deltaMinutes: PushDeltaMinutes) => void;
 }
 
-export function useCalendar(): UseCalendarResult {
-  const { blueprint, loading: blueprintLoading } = useTemplates();
+export function useCalendar(templates: UseTemplatesResult): UseCalendarResult {
+  const { blueprint, loading: blueprintLoading } = templates;
   const [viewMode, setViewModeState] = useState<CalendarViewMode>(loadStoredViewMode);
   const [anchorDate, setAnchorDate] = useState(() => toIsoDate(new Date()));
   const [events, setEvents] = useState<OneOffEvent[]>([]);

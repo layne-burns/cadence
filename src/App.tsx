@@ -4,8 +4,10 @@ import { BottomNav, type NavView } from "./components/layout/BottomNav";
 import { CalendarScreen } from "./components/timeline/CalendarScreen";
 import { NowAndNextCard } from "./components/focus/NowAndNextCard";
 import { PlaceholderView } from "./components/common/PlaceholderView";
+import { WeeklyBlueprintGrid } from "./components/weekly/WeeklyBlueprintGrid";
 import { useCalendar } from "./hooks/useCalendar";
 import { useSchedule } from "./hooks/useSchedule";
+import { useTemplates } from "./hooks/useTemplates";
 import { useNowTick } from "./hooks/useNowTick";
 import { getCurrentAndNext } from "./engine/scheduler";
 import {
@@ -18,12 +20,16 @@ import {
 
 function App() {
   const [view, setView] = useState<NavView>("calendar");
-  const calendar = useCalendar();
+  // One shared blueprint instance — Calendar, Focus, and the Blueprint
+  // editor all read and (for the editor) write the same state, so an
+  // edit shows up everywhere immediately instead of only after a reload.
+  const templates = useTemplates();
+  const calendar = useCalendar(templates);
   // Focus mode always tracks *today*, independent of whatever date the
   // Calendar tab is browsing — a separate useSchedule() instance whose
   // own date-nav methods are simply never called, so it stays pinned to
   // the date it initialized with.
-  const focusToday = useSchedule();
+  const focusToday = useSchedule(templates);
   // 30s rather than the spec's literal 1 minute — smooth enough for the
   // Now & Next progress ring to visibly move without excessive re-renders.
   const now = useNowTick(30_000);
@@ -41,6 +47,15 @@ function App() {
             calendar.visibleDates[calendar.visibleDates.length - 1] as string,
           );
 
+  const headerLabel =
+    view === "calendar"
+      ? calendarLabel
+      : view === "focus"
+        ? "Focus"
+        : view === "analytics"
+          ? "Analytics"
+          : "Blueprint";
+
   return (
     // A fixed h-svh (not min-h-svh) is load-bearing here: main's flex-1 +
     // min-h-0 + overflow-y-auto only actually scrolls internally — instead
@@ -49,7 +64,7 @@ function App() {
     // in the first place.
     <div className="flex h-svh flex-col">
       <Header
-        label={view === "calendar" ? calendarLabel : "Focus"}
+        label={headerLabel}
         showTodayLink={view === "calendar" && calendar.anchorDate !== todayIso}
         onPrev={view === "calendar" ? calendar.goPrev : undefined}
         onNext={view === "calendar" ? calendar.goNext : undefined}
@@ -93,10 +108,7 @@ function App() {
             description="The drop-off heatmap, category breakdown, and consistency trend land in Phase 6."
           />
         ) : (
-          <PlaceholderView
-            title="Blueprint editor"
-            description="The weekly template builder — setting up your recurring routine — lands in Phase 6. Add one-off events from Calendar for now."
-          />
+          <WeeklyBlueprintGrid templates={templates} />
         )}
       </main>
 

@@ -12,12 +12,18 @@
  * than the real thing: Phase 5's `timeShifter.ts` is what implements the
  * actual persisted, cascading "running late" push across the whole
  * remaining day. Nudges reset when you navigate to a different date.
+ *
+ * Takes `templates` (a `useTemplates()` result) as a parameter rather
+ * than calling the hook itself — Phase 6 added real blueprint editing,
+ * and this hook, `useCalendar`, and the blueprint editor all need the
+ * *same* blueprint state so an edit in one shows up in the others
+ * immediately. Call `useTemplates()` once at the App root and pass it in.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as db from "../services/db";
 import { renderDailyInstance } from "../engine/scheduler";
-import { useTemplates } from "./useTemplates";
+import type { UseTemplatesResult } from "./useTemplates";
 import { addDaysIso, dayOfWeekForIso, toIsoDate } from "../lib/time";
 import type {
   DailyInstance,
@@ -65,8 +71,8 @@ export interface UseScheduleResult {
   skipBlock: (block: RenderedBlock, nowMinutes: number) => void;
 }
 
-export function useSchedule(): UseScheduleResult {
-  const { blueprint, loading: blueprintLoading } = useTemplates();
+export function useSchedule(templates: UseTemplatesResult): UseScheduleResult {
+  const { blueprint, loading: blueprintLoading } = templates;
   const [date, setDate] = useState(() => toIsoDate(new Date()));
   const [events, setEvents] = useState<OneOffEvent[]>([]);
   const [logs, setLogs] = useState<AdherenceLog[]>([]);

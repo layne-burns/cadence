@@ -111,7 +111,11 @@ export function DayView({
         onClose={() => setAddingEvent(false)}
         title="Add one-off event"
       >
+        {/* key forces a fresh form each time the modal opens — see
+            DayTemplateEditor's BlockForm comment for why this matters
+            when a Modal's children stay mounted between opens. */}
         <EventForm
+          key={addingEvent ? "open" : "closed"}
           onCancel={() => setAddingEvent(false)}
           onSubmit={(values) => {
             onAddEvent(values);

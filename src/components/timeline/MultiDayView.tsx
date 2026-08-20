@@ -136,7 +136,10 @@ export function MultiDayView({
         onClose={() => setAddingEventFor(null)}
         title={addingEventFor ? `Add event — ${formatDateLabel(addingEventFor)}` : "Add event"}
       >
+        {/* key forces a fresh form per open (and per target date) — see
+            DayTemplateEditor's BlockForm comment for why. */}
         <EventForm
+          key={addingEventFor ?? "closed"}
           onCancel={() => setAddingEventFor(null)}
           onSubmit={(values) => {
             if (!addingEventFor) return;

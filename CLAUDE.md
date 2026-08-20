@@ -140,6 +140,33 @@ Now & Next buttons should call into it instead of the nudge map.
   analytics dashboard, explicitly Phase 6 in the original spec. Wire it up
   there; the engine functions are ready to be called.
 
+### Blueprint editor (Phase 6a) and shared `useTemplates`
+
+- `useTemplates()` grew a real CRUD surface (categories, blocks, wake/
+  wind-down) on top of its one primitive, `updateBlueprint(updater)`. A
+  category can't be deleted while any block still references it —
+  `RoutineBlock.categoryId` is required, so allowing that would leave a
+  dangling reference; `removeCategory` returns `false` instead and the UI
+  shows why.
+- **Call `useTemplates()` exactly once, at the App root, and pass the
+  result down.** `useSchedule` and `useCalendar` both take a `templates:
+  UseTemplatesResult` parameter now instead of calling the hook
+  themselves — before the editor existed, three independent instances
+  silently drifting out of sync was invisible (nothing wrote to
+  blueprint state); now that editing is real, it isn't. If a new
+  screen needs blueprint data, thread the same instance through rather
+  than calling `useTemplates()` again.
+- **`Modal` keeps its children mounted permanently** — it only toggles
+  the native `<dialog>`'s visibility via `showModal()`/`close()`, not
+  React mount state. A form inside one whose fields should reset (or
+  re-derive defaults like "first available category") between opens
+  needs a `key` that changes across open/close/target transitions, or
+  its `useState` initializers only ever run once. See `BlockForm`'s
+  usage in `DayTemplateEditor` and `EventForm`'s in `DayView`/
+  `MultiDayView` for the pattern — found the hard way when a freshly
+  added category didn't show up as the default in a block-add form that
+  had mounted before any category existed.
+
 ### Gist sync (`services/gistSync.ts`)
 
 - PAT + Gist ID live in browser localStorage only. Every request goes
@@ -212,5 +239,6 @@ Stack notes:
 - [x] Phase 4 — daily timeline + Now & Next focus UI
 - [x] Phase 5 — timeShifter.ts + streaks.ts (+ unplanned Calendar
       multi-view: Day/3-Day/Week/Month, done between Phase 4 and 5)
-- [ ] Phase 6 — blueprint editor + analytics dashboard
+- [x] Phase 6a — blueprint editor (categories + per-day blocks); analytics
+      dashboard (6b) still to come
 - [ ] Phase 7 — PWA manifest/SW, import/export, GitHub Pages deploy
