@@ -9,6 +9,92 @@ Syncs to a private GitHub Gist; otherwise fully offline via IndexedDB.
 Project owner is new to GitHub and Claude Code — narrate GitHub/git actions
 plainly, don't assume familiarity with jargon.
 
+## Handoff: structural review session starts here
+
+Phases 0–6 are complete and pushed (see the phase tracker at the bottom of
+this file for what each one covered). The app is genuinely usable
+end-to-end: set up categories and routine blocks in Blueprint, they render
+correctly on Calendar (Day/3-Day/Week/Month all share one engine), the
+collision engine correctly splits/shrinks around one-off events, Focus mode
+tracks today independent of Calendar's browsed date, and Analytics shows
+real streak/heatmap/category data. **Only Phase 7 (PWA manifest/service
+worker, JSON import/export, GitHub Pages deploy config) remains unbuilt.**
+
+This section is for a fresh session (structural review + further testing)
+to orient quickly without re-deriving what's already known. Everything
+below is also covered in more detail in its own section further down —
+this is the "read this first" summary, not a duplicate source of truth.
+
+**Test coverage gap — the single biggest thing to look at first.** All 93
+existing tests (`npm run test`) cover `engine/`, `lib/`, and `services/` —
+pure functions and `db.ts`/`gistSync.ts` with `fake-indexeddb`/mocked
+`fetch`. **Zero hooks or components have unit tests.** Every hook
+(`useSchedule`, `useCalendar`, `useTemplates`, `useSync`, `useStreak`,
+`useAnalyticsData`) and every component were verified only by manually
+driving the dev server through the Browser tool this session — real
+verification, but not regression-proof. If component/hook testing
+infrastructure (`@testing-library/react` + jsdom) gets added, this is
+where it has the most leverage.
+
+**Known gaps and simplifications worth a structural look:**
+
+- **No UI to edit or delete a one-off event once added.** `useSchedule`
+  has a `removeEvent`, but nothing calls it, and `useCalendar` (what
+  Calendar actually uses) doesn't even expose one. You can add an event
+  via `EventForm` in Day/3-Day/Week view; there's no way to remove or
+  retitle it afterward except by deleting the whole day's data. This is a
+  real missing feature, not a documented deliberate deferral like the
+  ones below.
+- **`useSchedule` and `useCalendar` duplicate CRUD logic in shape**
+  (toggle-complete, add-event) because one operates on a single date and
+  the other on a map of dates. Documented as a deliberate trade in
+  `useCalendar.ts`'s file comment, but worth a real look now that both
+  are stable — a shared single-date "day data" primitive that
+  `useCalendar` composes per-date might remove the duplication cleanly.
+  `DayView.tsx` / `MultiDayView.tsx` have a smaller version of the same
+  duplication (block positioning, the add-event modal).
+- **Focus's nudges (+10 min/skip) and Calendar's "running late" push are
+  both session-local, not persisted** — by design (see the Now & Next and
+  timeShifter sections below for the reasoning), but confirm that's still
+  the right call now that the rest of the app is real, not just whether
+  it was reasonable to defer originally.
+- **No settings UI.** `useSync` (Gist sync) is fully built and tested but
+  never called anywhere — the header's settings icon is `disabled`. If
+  Gist sync is still wanted, `GistConfigModal` is the missing piece, not
+  the sync logic itself.
+- **The blueprint has no per-day history/versioning** — Analytics
+  necessarily renders *today's* blueprint against every past matching
+  weekday in its 30-day window, not what was actually scheduled
+  historically. Documented in the Analytics section below since it looks
+  like a bug without that context; a real fix would be a genuine feature
+  (snapshotting), not a quick patch.
+- **The dataviz color palette wasn't run through the skill's validator**
+  (`scripts/validate_palette.js`) — Analytics currently uses Tailwind's
+  indigo scale directly rather than a checked-for-colorblind-safety ramp.
+  Fine at one hue with no adjacent-pair risk; worth validating properly
+  if the palette ever grows.
+- **`Modal` keeps children permanently mounted** (toggles the native
+  `<dialog>`, not React mount state) — forms inside it use a
+  transition-derived `key` to force a fresh mount per open. Works, but a
+  future contributor who doesn't know this will reintroduce the same
+  stale-state bug in a new form. Worth deciding whether to keep the
+  `key` convention or change `Modal` itself to conditionally render
+  children.
+- **Dark mode has no way for a real user to ever reach it.** Every
+  component has correct `dark:` styling (verified throughout this
+  project by injecting the `.dark` class via the browser console), but
+  `@custom-variant dark` in `src/index.css` is class-based only, and
+  nothing in the app ever adds that class — no system-preference sync,
+  no toggle UI. Right now the app is light-mode-only in practice despite
+  being fully dark-mode-*styled*. A small `useTheme` hook (sync to
+  `prefers-color-scheme` by default, manual override persisted to
+  localStorage, toggle wired into the settings icon once that exists)
+  would turn already-correct CSS into a real feature.
+
+**Everything else** — architecture rules, the full domain-logic reference,
+commands, working style — is below, unchanged in nature from how it's
+guided this project through Phases 0–6.
+
 ## Tech stack
 
 - React 18+ / TypeScript (strict, no `any`) / Vite
