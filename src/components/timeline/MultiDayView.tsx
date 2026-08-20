@@ -10,10 +10,12 @@ import { Modal } from "../common/Modal";
 import { cx } from "../../lib/cx";
 import { dayNumber, formatDateLabel, formatWeekdayShort, minutesSinceMidnight } from "../../lib/time";
 
-// Denser than the single-day view's 64px/hr — several columns need to fit
-// side by side, and each one individually needs less resolution than a
-// full-width day view does.
-const PIXELS_PER_MINUTE = 48 / 60;
+// Denser than the single-day view — several columns share the width, and
+// a narrow column can't show much text anyway, so the detail modal does
+// more of the work here. Still raised from 48 to 64 so a 30-minute block
+// clears TimeblockCard's title threshold instead of rendering as a bare
+// colour bar.
+const PIXELS_PER_MINUTE = 64 / 60;
 const MIN_BLOCK_HEIGHT_PX = 3;
 
 interface MultiDayViewProps {
@@ -24,6 +26,7 @@ interface MultiDayViewProps {
   getLogForBlock: (date: string, blockId: string) => AdherenceLog | undefined;
   onToggleComplete: (date: string, block: RenderedBlock) => void;
   onAddEvent: (date: string, values: NewEventInput) => void;
+  onOpenBlockDetail: (date: string, block: RenderedBlock) => void;
 }
 
 export function MultiDayView({
@@ -34,6 +37,7 @@ export function MultiDayView({
   getLogForBlock,
   onToggleComplete,
   onAddEvent,
+  onOpenBlockDetail,
 }: MultiDayViewProps) {
   const [addingEventFor, setAddingEventFor] = useState<string | null>(null);
 
@@ -101,25 +105,30 @@ export function MultiDayView({
               key={date}
               className="relative flex-1 border-l border-neutral-100 px-0.5 dark:border-neutral-900"
             >
-              {instance?.blocks.map((block) => (
-                <div
-                  key={block.id}
-                  className="absolute inset-x-0 px-0.5"
-                  style={{
-                    top: (block.startMinutes - rangeWake) * PIXELS_PER_MINUTE,
-                    height: Math.max(
-                      (block.endMinutes - block.startMinutes) * PIXELS_PER_MINUTE,
-                      MIN_BLOCK_HEIGHT_PX,
-                    ),
-                  }}
-                >
-                  <TimeblockCard
-                    block={block}
-                    completed={getLogForBlock(date, block.id)?.completed ?? false}
-                    onToggleComplete={() => onToggleComplete(date, block)}
-                  />
-                </div>
-              ))}
+              {instance?.blocks.map((block) => {
+                const blockHeight = Math.max(
+                  (block.endMinutes - block.startMinutes) * PIXELS_PER_MINUTE,
+                  MIN_BLOCK_HEIGHT_PX,
+                );
+                return (
+                  <div
+                    key={block.id}
+                    className="absolute inset-x-0 px-0.5"
+                    style={{
+                      top: (block.startMinutes - rangeWake) * PIXELS_PER_MINUTE,
+                      height: blockHeight,
+                    }}
+                  >
+                    <TimeblockCard
+                      block={block}
+                      completed={getLogForBlock(date, block.id)?.completed ?? false}
+                      heightPx={blockHeight}
+                      onToggleComplete={() => onToggleComplete(date, block)}
+                      onOpenDetail={() => onOpenBlockDetail(date, block)}
+                    />
+                  </div>
+                );
+              })}
               {showNowLine && (
                 <div
                   className="pointer-events-none absolute inset-x-0 border-t-2 border-red-500"

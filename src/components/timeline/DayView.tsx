@@ -12,7 +12,12 @@ import { Modal } from "../common/Modal";
 import { Button } from "../common/Button";
 import { minutesSinceMidnight } from "../../lib/time";
 
-const PIXELS_PER_MINUTE = 64 / 60;
+// 80px/hour rather than 64: at 64 a 30-minute block was 32px, which
+// cannot fit a title and a time range, and the owner's real schedule is
+// built from 30-50 minute blocks. Height still encodes duration — the
+// ruler beside it stays authoritative — so the fix is a bigger scale plus
+// TimeblockCard degrading its content, not blocks floating free.
+const PIXELS_PER_MINUTE = 80 / 60;
 const MIN_BLOCK_HEIGHT_PX = 4;
 
 interface DayViewProps {
@@ -22,6 +27,7 @@ interface DayViewProps {
   getLogForBlock: (id: string) => AdherenceLog | undefined;
   onToggleComplete: (block: RenderedBlock) => void;
   onAddEvent: (values: NewEventInput) => void;
+  onOpenBlockDetail: (block: RenderedBlock) => void;
   /** "Running late?" push — only meaningful (and only rendered) for
    * today, since it shifts blocks relative to the current time. */
   onPushSchedule?: (delta: PushDeltaMinutes) => void;
@@ -34,6 +40,7 @@ export function DayView({
   getLogForBlock,
   onToggleComplete,
   onAddEvent,
+  onOpenBlockDetail,
   onPushSchedule,
 }: DayViewProps) {
   const [addingEvent, setAddingEvent] = useState(false);
@@ -75,25 +82,30 @@ export function DayView({
             pixelsPerMinute={PIXELS_PER_MINUTE}
           />
           <div className="relative ml-2 flex-1">
-            {blocks.map((block) => (
-              <div
-                key={block.id}
-                className="absolute inset-x-0 px-0.5"
-                style={{
-                  top: (block.startMinutes - wakeMinutes) * PIXELS_PER_MINUTE,
-                  height: Math.max(
-                    (block.endMinutes - block.startMinutes) * PIXELS_PER_MINUTE,
-                    MIN_BLOCK_HEIGHT_PX,
-                  ),
-                }}
-              >
-                <TimeblockCard
-                  block={block}
-                  completed={getLogForBlock(block.id)?.completed ?? false}
-                  onToggleComplete={() => onToggleComplete(block)}
-                />
-              </div>
-            ))}
+            {blocks.map((block) => {
+              const blockHeight = Math.max(
+                (block.endMinutes - block.startMinutes) * PIXELS_PER_MINUTE,
+                MIN_BLOCK_HEIGHT_PX,
+              );
+              return (
+                <div
+                  key={block.id}
+                  className="absolute inset-x-0 px-0.5"
+                  style={{
+                    top: (block.startMinutes - wakeMinutes) * PIXELS_PER_MINUTE,
+                    height: blockHeight,
+                  }}
+                >
+                  <TimeblockCard
+                    block={block}
+                    completed={getLogForBlock(block.id)?.completed ?? false}
+                    heightPx={blockHeight}
+                    onToggleComplete={() => onToggleComplete(block)}
+                    onOpenDetail={() => onOpenBlockDetail(block)}
+                  />
+                </div>
+              );
+            })}
             {showNowLine && (
               <div
                 className="pointer-events-none absolute inset-x-0 border-t-2 border-red-500"

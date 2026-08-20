@@ -88,7 +88,7 @@ function App() {
           off-screen below a long day's timeline instead of staying pinned. */}
       <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         {view === "calendar" ? (
-          <CalendarScreen calendar={calendar} now={now} />
+          <CalendarScreen calendar={calendar} templates={templates} now={now} />
         ) : view === "focus" ? (
           focusToday.loading ? (
             <div className="flex flex-1 items-center justify-center text-sm text-neutral-400 dark:text-neutral-600">

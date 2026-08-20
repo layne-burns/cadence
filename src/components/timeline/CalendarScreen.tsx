@@ -1,5 +1,9 @@
+import { useState } from "react";
 import type { UseCalendarResult } from "../../hooks/useCalendar";
+import type { UseTemplatesResult } from "../../hooks/useTemplates";
+import type { RenderedBlock } from "../../types/schedule";
 import { minutesSinceMidnight, toIsoDate } from "../../lib/time";
+import { BlockDetailModal } from "./BlockDetailModal";
 import { CalendarViewSwitcher } from "./CalendarViewSwitcher";
 import { DayView } from "./DayView";
 import { MonthView } from "./MonthView";
@@ -7,12 +11,22 @@ import { MultiDayView } from "./MultiDayView";
 
 interface CalendarScreenProps {
   calendar: UseCalendarResult;
+  templates: UseTemplatesResult;
   now: Date;
 }
 
-export function CalendarScreen({ calendar, now }: CalendarScreenProps) {
+/** Which block the detail modal is showing. Carries its date because
+ * multi-day views can open a block from any visible column, and the modal
+ * needs to know which day's check-in it's toggling. */
+interface DetailTarget {
+  date: string;
+  block: RenderedBlock;
+}
+
+export function CalendarScreen({ calendar, templates, now }: CalendarScreenProps) {
   const today = toIsoDate(now);
   const nowMinutes = minutesSinceMidnight(now);
+  const [detail, setDetail] = useState<DetailTarget | null>(null);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -35,6 +49,9 @@ export function CalendarScreen({ calendar, now }: CalendarScreenProps) {
           getLogForBlock={(blockId) => calendar.getLogForBlock(calendar.anchorDate, blockId)}
           onToggleComplete={(block) => void calendar.toggleComplete(calendar.anchorDate, block)}
           onAddEvent={(values) => void calendar.addEvent(calendar.anchorDate, values)}
+          onOpenBlockDetail={(block) =>
+            setDetail({ date: calendar.anchorDate, block })
+          }
           onPushSchedule={
             calendar.anchorDate === today
               ? (delta) => calendar.pushToday(nowMinutes, delta)
@@ -59,8 +76,27 @@ export function CalendarScreen({ calendar, now }: CalendarScreenProps) {
           getLogForBlock={calendar.getLogForBlock}
           onToggleComplete={(date, block) => void calendar.toggleComplete(date, block)}
           onAddEvent={(date, values) => void calendar.addEvent(date, values)}
+          onOpenBlockDetail={(date, block) => setDetail({ date, block })}
         />
       )}
+
+      <BlockDetailModal
+        block={detail?.block ?? null}
+        date={detail?.date ?? today}
+        completed={
+          detail
+            ? (calendar.getLogForBlock(detail.date, detail.block.id)?.completed ?? false)
+            : false
+        }
+        categories={templates.blueprint.categories}
+        sourceEvent={detail ? calendar.findSourceEvent(detail.block) : null}
+        onClose={() => setDetail(null)}
+        onToggleComplete={() => {
+          if (detail) void calendar.toggleComplete(detail.date, detail.block);
+        }}
+        onUpdateEvent={(id, values) => void calendar.updateEvent(id, values)}
+        onDeleteEvent={(id) => void calendar.removeEvent(id)}
+      />
     </div>
   );
 }

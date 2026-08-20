@@ -85,6 +85,12 @@ export interface UseCalendarResult {
   getLogForBlock: (date: string, blockId: string) => AdherenceLog | undefined;
   toggleComplete: (date: string, block: RenderedBlock) => Promise<void>;
   addEvent: (date: string, input: NewEventInput) => Promise<void>;
+  updateEvent: (id: string, input: NewEventInput) => Promise<void>;
+  removeEvent: (id: string) => Promise<void>;
+  /** The `OneOffEvent` a rendered block came from, or null for routine and
+   * buffer blocks. Lets the detail modal offer edit/delete only where
+   * there's something editable behind the block. */
+  findSourceEvent: (block: RenderedBlock) => OneOffEvent | null;
   /** "Running late?" — re-renders *today* with its remaining flexible
    * blocks pushed forward by `deltaMinutes` (see engine/timeShifter.ts).
    * Session-local only, like Focus's nudges: not persisted, and reset
@@ -208,6 +214,34 @@ export function useCalendar(templates: UseTemplatesResult): UseCalendarResult {
     await db.saveEvent(event);
   }, []);
 
+  const updateEvent = useCallback(async (id: string, input: NewEventInput) => {
+    let updated: OneOffEvent | null = null;
+    setEvents((current) =>
+      current.map((event) => {
+        if (event.id !== id) return event;
+        // `date` and `id` are preserved: editing an event's details is a
+        // different operation from moving it to another day, which the
+        // form doesn't offer.
+        updated = { ...event, ...input };
+        return updated;
+      }),
+    );
+    if (updated) await db.saveEvent(updated);
+  }, []);
+
+  const removeEvent = useCallback(async (id: string) => {
+    setEvents((current) => current.filter((event) => event.id !== id));
+    await db.deleteEvent(id);
+  }, []);
+
+  const findSourceEvent = useCallback(
+    (block: RenderedBlock) =>
+      block.kind === "event" && block.sourceId
+        ? (events.find((event) => event.id === block.sourceId) ?? null)
+        : null,
+    [events],
+  );
+
   const pushToday = useCallback(
     (nowMinutes: number, deltaMinutes: PushDeltaMinutes) => {
       const todayIso = toIsoDate(new Date());
@@ -241,6 +275,9 @@ export function useCalendar(templates: UseTemplatesResult): UseCalendarResult {
     getLogForBlock,
     toggleComplete,
     addEvent,
+    updateEvent,
+    removeEvent,
+    findSourceEvent,
     pushToday,
   };
 }
