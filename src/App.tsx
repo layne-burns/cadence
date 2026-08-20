@@ -3,7 +3,7 @@ import { Header } from "./components/layout/Header";
 import { BottomNav, type NavView } from "./components/layout/BottomNav";
 import { CalendarScreen } from "./components/timeline/CalendarScreen";
 import { NowAndNextCard } from "./components/focus/NowAndNextCard";
-import { PlaceholderView } from "./components/common/PlaceholderView";
+import { AnalyticsScreen } from "./components/analytics/AnalyticsScreen";
 import { WeeklyBlueprintGrid } from "./components/weekly/WeeklyBlueprintGrid";
 import { useCalendar } from "./hooks/useCalendar";
 import { useSchedule } from "./hooks/useSchedule";
@@ -103,10 +103,7 @@ function App() {
             </div>
           )
         ) : view === "analytics" ? (
-          <PlaceholderView
-            title="Analytics"
-            description="The drop-off heatmap, category breakdown, and consistency trend land in Phase 6."
-          />
+          <AnalyticsScreen templates={templates} />
         ) : (
           <WeeklyBlueprintGrid templates={templates} />
         )}

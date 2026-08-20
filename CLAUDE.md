@@ -124,7 +124,7 @@ Now & Next buttons should call into it instead of the nudge map.
   Focus's nudges) — not persisted, cleared whenever the visible range
   reloads.
 
-### Soft streaks (`engine/streaks.ts`) — Phase 5, engine done; UI is Phase 6
+### Soft streaks (`engine/streaks.ts`) — Phase 5 engine, Phase 6b UI, done
 
 - `computeCompletionRatio`/`computeDayOutcome`/`applyDayOutcome`/`recordDay`
   are pure and fully tested. A block counts toward the ratio if it's
@@ -135,10 +135,22 @@ Now & Next buttons should call into it instead of the nudge map.
   was already spent, the streak resets to 0. `longestStreak` never
   decreases. `graceDayDatesUsed` is pruned at 14 days (margin over the
   7-day window), `history` capped at 400 entries.
-- **Nothing calls `recordDay` yet.** There's no "close out the day"
-  trigger and no streak display — that's `StreakCard` and the rest of the
-  analytics dashboard, explicitly Phase 6 in the original spec. Wire it up
-  there; the engine functions are ready to be called.
+- `hooks/useStreak.ts` is the "close out the day" trigger: on mount, walks
+  from the day after `history`'s last entry up through **yesterday**
+  (never today — the day isn't over) and calls `recordDay` for each,
+  persisting once at the end. A brand-new user (empty `history`) only
+  backfills from yesterday, not the unbounded past, so empty pre-signup
+  days don't retroactively count as vacuous successes.
+- **Known characteristic, not a bug**: the blueprint has no history or
+  versioning, so `useAnalyticsData`'s 30-day window (and `useStreak`'s
+  catch-up) render *today's* blueprint against every past matching
+  weekday — not whatever was actually scheduled on that historical day.
+  Concretely: add a Wednesday block today and the category breakdown
+  immediately shows it as "1/5" (one of the ~5 Wednesdays in the trailing
+  30 days actually has a completion). This is architecturally honest
+  given the data model, but looks like a bug at first glance if you don't
+  know it's intentional — a real per-day blueprint snapshot would be a
+  genuine (larger) feature, not a fix.
 
 ### Blueprint editor (Phase 6a) and shared `useTemplates`
 
@@ -166,6 +178,38 @@ Now & Next buttons should call into it instead of the nudge map.
   `MultiDayView` for the pattern — found the hard way when a freshly
   added category didn't show up as the default in a block-add form that
   had mounted before any category existed.
+
+### Analytics dashboard (Phase 6b, `components/analytics/`)
+
+- `engine/analytics.ts`: `buildTelemetrySamples` flattens rendered days +
+  logs into one `TelemetrySample` per non-buffer block (`completed: false`
+  by default with no log — a drop-off, not a missing data point), then
+  `computeHourlyDropoff` / `computeCategoryBreakdown` bucket those. Pure,
+  tested (9 tests).
+- `hooks/useAnalyticsData.ts` loads a trailing 30-day window (one range
+  query each for events/logs) and feeds it through the aggregators.
+  `hooks/useStreak.ts` is separate — see the streaks section above.
+- **`CategoryBreakdown` is a horizontal bar chart, not the pie the
+  original spec's file list named (`CategoryPie`)** — deliberate,
+  following the dataviz skill's guidance that part-to-whole reads more
+  accurately as bar length than pie angle, and each row is already
+  directly labeled so a legend would just repeat it. Each bar uses the
+  category's own user-chosen `color`, not a generated categorical
+  palette — categories already carry color in the type system.
+- `DropoffHeatmap`'s sequential ramp is Tailwind's indigo scale (light
+  →dark), substituted for the dataviz skill's default blue per its own
+  "swap in your brand's hue" guidance, since indigo is already this
+  app's accent everywhere else (BottomNav, Focus's progress ring, links).
+  A full validated-palette pass (running the skill's
+  `scripts/validate_palette.js`) was skipped as out of scope for this
+  pass — worth doing if the palette ever expands past one sequential hue
+  and neutral.
+- Found and fixed live in the browser: the heatmap's "no data" cells
+  originally used `dark:bg-neutral-900`, identical to `Card`'s own dark
+  background, so they were invisible in dark mode. Fixed to `-800`. A
+  reminder that Tailwind class review alone doesn't catch same-value
+  collisions between a component and its container — only actually
+  looking at it in both themes does.
 
 ### Gist sync (`services/gistSync.ts`)
 
@@ -239,6 +283,7 @@ Stack notes:
 - [x] Phase 4 — daily timeline + Now & Next focus UI
 - [x] Phase 5 — timeShifter.ts + streaks.ts (+ unplanned Calendar
       multi-view: Day/3-Day/Week/Month, done between Phase 4 and 5)
-- [x] Phase 6a — blueprint editor (categories + per-day blocks); analytics
-      dashboard (6b) still to come
+- [x] Phase 6a — blueprint editor (categories + per-day blocks)
+- [x] Phase 6b — analytics dashboard (streak card, consistency trend,
+      hourly heatmap, category breakdown) + useStreak's catch-up recording
 - [ ] Phase 7 — PWA manifest/SW, import/export, GitHub Pages deploy
