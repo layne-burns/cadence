@@ -103,8 +103,8 @@ npm run typecheck    # tsc --noEmit
 
 ## Repo status
 
-- Local repo initialized at this path. GitHub CLI (`gh`) installed. Remote
-  GitHub repo: not yet created — see current session for status.
+- GitHub: https://github.com/layne-burns/cadence (private), remote `origin`,
+  branch `master`. `gh` CLI authenticated as `layne-burns`.
 
 ## Phase tracker
 
