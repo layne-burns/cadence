@@ -81,14 +81,25 @@ blueprint**. Splitting/shrinking is computed fresh per day at render time.
 ## Commands
 
 ```bash
-npm run dev        # Vite dev server
-npm run build       # production build
-npm run test         # vitest run
-npm run test:watch  # vitest watch mode
-npm run typecheck    # tsc --noEmit
+npm run dev         # Vite dev server (also registered in .claude/launch.json as "cadence-dev", port 5183)
+npm run build        # production build (tsc -b && vite build)
+npm run test           # vitest run
+npm run test:watch    # vitest watch mode
+npm run typecheck      # tsc -b, strict mode, no emit
+npm run lint             # oxlint
 ```
 
-(Exact scripts get filled in during Phase 1 — update this section then.)
+Stack notes:
+- Tailwind CSS v4 via `@tailwindcss/vite` (no separate `tailwind.config.js` —
+  theme tokens live in `src/index.css` under `@theme`).
+- Dark mode is **class-based**, not OS-only: `@custom-variant dark` in
+  `src/index.css` makes `dark:` respond to a `.dark` class on an ancestor
+  (normally `<html>`). A later-phase theme hook is responsible for syncing
+  that class with system preference by default and a manual override on
+  top — until that hook exists, the app renders light-only.
+- `tsconfig.app.json` / `tsconfig.node.json` both set `"strict": true`
+  (plus `noUncheckedIndexedAccess`) — this is the actual enforcement of the
+  "no `any`" rule above, not just a convention.
 
 ## Working style for this project
 
@@ -109,7 +120,7 @@ npm run typecheck    # tsc --noEmit
 ## Phase tracker
 
 - [x] Phase 0 — env diagnostics, `gh` installed, this file
-- [ ] Phase 1 — Vite + Tailwind + Lucide + TS types + Vitest scaffold
+- [x] Phase 1 — Vite + Tailwind + Lucide + TS types + Vitest scaffold
 - [ ] Phase 2 — scheduler.ts collision engine + tests
 - [ ] Phase 3 — db.ts (IndexedDB) + gistSync.ts
 - [ ] Phase 4 — daily timeline + Now & Next focus UI

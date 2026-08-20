@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+/* Class-based dark mode: without this, Tailwind's `dark:` variant only
+   follows the OS preference. We want the app to be able to override that
+   (a settings toggle) as well as respect system default, so `dark:` applies
+   whenever an ancestor carries `.dark` — see useTheme in a later phase. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Keep the palette small and high-contrast on purpose — this app is for
+     someone whose executive function is already taxed. Color should carry
+     category meaning (set per-category by the user), not decorate the UI. */
+  --font-sans: system-ui, "Segoe UI", Roboto, sans-serif;
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  @apply bg-white text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100;
+}
