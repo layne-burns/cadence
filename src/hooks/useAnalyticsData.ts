@@ -11,9 +11,19 @@ import { renderDailyInstance } from "../engine/scheduler";
 import {
   buildTelemetrySamples,
   computeCategoryBreakdown,
+  computeDayOfWeekBreakdown,
+  computeEnergyByHour,
+  computeFlexibilityBreakdown,
+  computeFrictionCounts,
   computeHourlyDropoff,
+  computePlannedVsActual,
   type CategoryBucket,
+  type DayOfWeekBucket,
+  type EnergyByHourBucket,
+  type FlexibilityBucket,
+  type FrictionCount,
   type HourBucket,
+  type PlannedVsActualBucket,
 } from "../engine/analytics";
 import { addDaysIso, dayOfWeekForIso, toIsoDate } from "../lib/time";
 import type { UseTemplatesResult } from "./useTemplates";
@@ -26,6 +36,11 @@ export interface UseAnalyticsDataResult {
   loading: boolean;
   hourlyDropoff: HourBucket[];
   categoryBreakdown: CategoryBucket[];
+  energyByHour: EnergyByHourBucket[];
+  frictionCounts: FrictionCount[];
+  plannedVsActual: PlannedVsActualBucket[];
+  dayOfWeek: DayOfWeekBucket[];
+  flexibility: FlexibilityBucket[];
 }
 
 export function useAnalyticsData(templates: UseTemplatesResult): UseAnalyticsDataResult {
@@ -78,10 +93,32 @@ export function useAnalyticsData(templates: UseTemplatesResult): UseAnalyticsDat
   );
   const hourlyDropoff = useMemo(() => computeHourlyDropoff(samples), [samples]);
   const categoryBreakdown = useMemo(() => computeCategoryBreakdown(samples), [samples]);
+  const energyByHour = useMemo(() => computeEnergyByHour(samples), [samples]);
+  const frictionCounts = useMemo(() => computeFrictionCounts(samples), [samples]);
+  // These three read the rendered instances directly rather than the
+  // flattened samples: they need block duration and flexibility, which a
+  // TelemetrySample deliberately doesn't carry.
+  const plannedVsActual = useMemo(
+    () => computePlannedVsActual(instances, logsByDate),
+    [instances, logsByDate],
+  );
+  const dayOfWeek = useMemo(
+    () => computeDayOfWeekBreakdown(instances, logsByDate),
+    [instances, logsByDate],
+  );
+  const flexibility = useMemo(
+    () => computeFlexibilityBreakdown(instances, logsByDate),
+    [instances, logsByDate],
+  );
 
   return {
     loading: rangeLoading || templates.loading,
     hourlyDropoff,
     categoryBreakdown,
+    energyByHour,
+    frictionCounts,
+    plannedVsActual,
+    dayOfWeek,
+    flexibility,
   };
 }
