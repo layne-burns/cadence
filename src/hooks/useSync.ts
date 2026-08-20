@@ -24,6 +24,7 @@ import {
   GistSyncError,
   createGist,
   fetchGist,
+  findExistingCadenceGist,
   loadStoredCredentials,
   pushGist,
   saveCredentials,
@@ -249,16 +250,28 @@ export function useSync(): UseSyncResult {
     async (pat: string, gistId?: string) => {
       setStatus({ state: "syncing" });
       try {
-        if (gistId) {
-          saveCredentials({ pat, gistId });
-          await pullFromRemote(pat, gistId);
-        } else {
-          const local = await db.exportAllData();
-          const created = await createGist(pat, buildPayload(local));
-          saveCredentials({ pat, gistId: created.gistId });
-          writeLastKnownRemoteUpdatedAt(created.updatedAt);
-          setStatus({ state: "synced", lastSyncedAt: new Date().toISOString() });
+        // Adopt before creating. Without the discovery step, setting up a
+        // second device by pasting the same token would mint a *new*
+        // gist, leaving the devices syncing to different files while both
+        // cheerfully reported "Synced" — a silent split that looks like
+        // sync simply not working.
+        const existingId = gistId || (await findExistingCadenceGist(pat));
+
+        if (existingId) {
+          saveCredentials({ pat, gistId: existingId });
+          setIsConfigured(true);
+          await pullFromRemote(pat, existingId);
+          // The pull replaced the whole local database, so every hook is
+          // now holding stale state — same reasoning as the import path.
+          window.location.reload();
+          return;
         }
+
+        const local = await db.exportAllData();
+        const created = await createGist(pat, buildPayload(local));
+        saveCredentials({ pat, gistId: created.gistId });
+        writeLastKnownRemoteUpdatedAt(created.updatedAt);
+        setStatus({ state: "synced", lastSyncedAt: new Date().toISOString() });
         setIsConfigured(true);
       } catch (error) {
         setStatus(errorToStatus(error));

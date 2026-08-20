@@ -103,6 +103,12 @@ export function GistConfigPanel({ sync }: GistConfigPanelProps) {
             Paste a GitHub personal access token with the <code>gist</code> scope. It's
             stored only in this browser and sent only to api.github.com.
           </p>
+          <p className="rounded-lg bg-neutral-50 p-2.5 text-xs text-neutral-600 dark:bg-neutral-800/50 dark:text-neutral-300">
+            <strong>Adding another device?</strong> Paste the same token. Cadence
+            finds the sync file your other device already made and joins it — you
+            don't need to copy anything else across. Note that exporting a backup
+            never includes your token, on purpose.
+          </p>
           <Input
             label="Personal access token"
             type="password"
@@ -112,10 +118,10 @@ export function GistConfigPanel({ sync }: GistConfigPanelProps) {
             placeholder="ghp_…"
           />
           <Input
-            label="Existing Gist ID (optional)"
+            label="Gist ID (optional)"
             value={gistId}
             onChange={(event) => setGistId(event.target.value)}
-            placeholder="Leave blank to create a new one"
+            placeholder="Only needed to force a specific Gist"
           />
           <div className="flex gap-2">
             <Button
@@ -124,7 +130,7 @@ export function GistConfigPanel({ sync }: GistConfigPanelProps) {
               disabled={busy || !pat.trim()}
               onClick={() => void handleConnect(gistId.trim().length > 0)}
             >
-              {gistId.trim() ? "Connect to Gist" : "Create private Gist"}
+              {busy ? "Connecting…" : "Connect"}
             </Button>
           </div>
         </>

@@ -4,6 +4,7 @@ import {
   clearCredentials,
   createGist,
   fetchGist,
+  findExistingCadenceGist,
   loadStoredCredentials,
   pushGist,
   saveCredentials,
@@ -142,6 +143,59 @@ describe("REST client", () => {
       message: "Bad credentials",
       status: 401,
     });
+  });
+
+  it("findExistingCadenceGist returns the id of a gist holding cadence-data.json", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          { id: "someone-elses-notes", files: { "notes.md": {} } },
+          { id: "the-one", files: { "cadence-data.json": {} } },
+        ]),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await findExistingCadenceGist("ghp_abc")).toBe("the-one");
+  });
+
+  it("findExistingCadenceGist returns null when the account has no Cadence gist", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([{ id: "x", files: { "other.txt": {} } }]), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await findExistingCadenceGist("ghp_abc")).toBeNull();
+  });
+
+  it("findExistingCadenceGist prefers the most recently updated duplicate", async () => {
+    // GitHub returns gists newest-first, so a stale duplicate from before
+    // discovery existed should lose to the one in active use.
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify([
+          { id: "newer", files: { "cadence-data.json": {} } },
+          { id: "older", files: { "cadence-data.json": {} } },
+        ]),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await findExistingCadenceGist("ghp_abc")).toBe("newer");
+  });
+
+  it("findExistingCadenceGist surfaces a bad token instead of reporting 'none found'", async () => {
+    // Swallowing a 401 into null would silently create a duplicate gist.
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ message: "Bad credentials" }), { status: 401 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(findExistingCadenceGist("bad")).rejects.toMatchObject({ status: 401 });
   });
 
   it("pushGist PATCHes the gist with the encoded payload", async () => {

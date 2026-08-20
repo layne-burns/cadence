@@ -118,6 +118,35 @@ export async function createGist(
   return { gistId: body.id, updatedAt: body.updated_at };
 }
 
+/**
+ * Finds an existing Cadence gist on this account, by looking for one
+ * whose files include `cadence-data.json`.
+ *
+ * This exists to stop a silent, unrecoverable-looking failure: setting up
+ * a second device by pasting the same token used to *create a new gist*,
+ * so the two devices synced to different files and never saw each other's
+ * data — with both reporting "Synced" the whole time. Discovering the
+ * existing gist means adding a device is just "paste the same token".
+ *
+ * Returns the most recently updated match, since GitHub returns gists
+ * newest-first and a duplicate from before this existed should lose to
+ * the one in active use.
+ */
+export async function findExistingCadenceGist(pat: string): Promise<string | null> {
+  const response = await fetch(`${API_BASE}/gists?per_page=100`, {
+    headers: authHeaders(pat),
+  });
+  if (!response.ok) {
+    throw new GistSyncError(await parseErrorMessage(response), response.status);
+  }
+  const body = (await response.json()) as Array<{
+    id: string;
+    files: Record<string, unknown>;
+  }>;
+  const match = body.find((gist) => GIST_FILENAME in (gist.files ?? {}));
+  return match?.id ?? null;
+}
+
 export async function fetchGist(
   pat: string,
   gistId: string,
