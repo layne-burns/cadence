@@ -1,9 +1,15 @@
 /**
- * The "running late" push tool: shift today's remaining flexible blocks
- * forward by 15/30/45/60 minutes, then re-render so the collision engine
- * naturally re-splits/re-shrinks them against whatever fixed events are
- * still ahead. If that push runs the day past wind-down, best-effort
- * compress trailing buffer/flexible time to try to make it fit.
+ * The schedule-shift tool: move today's remaining flexible blocks by
+ * 15/30/45/60 minutes in **either** direction, then re-render so the
+ * collision engine naturally re-splits/re-shrinks them against whatever
+ * fixed events are still ahead. If a later shift runs the day past
+ * wind-down, best-effort compress trailing buffer/flexible time to try to
+ * make it fit.
+ *
+ * This started as a one-way "running late" push. Running *ahead* turns
+ * out to be the same operation with the sign flipped — the only asymmetry
+ * is that pulling earlier needs a floor (you can't start something in the
+ * past) where pushing later needs a ceiling (wind-down).
  *
  * Compression is the subtle part, worth spelling out: only the block that
  * currently ends *last* in the day can affect whether the day now ends
@@ -27,13 +33,30 @@ import type {
 } from "../types/schedule";
 import type { DayTemplate } from "../types/template";
 
-export type PushDeltaMinutes = 15 | 30 | 45 | 60;
+export type ShiftMagnitudeMinutes = 15 | 30 | 45 | 60;
 
-export interface PushScheduleResult {
+/** Signed: negative pulls the rest of the day earlier, positive pushes it
+ * later. Running late and running ahead are the same operation with the
+ * sign flipped. */
+export type ShiftDeltaMinutes =
+  | -60
+  | -45
+  | -30
+  | -15
+  | ShiftMagnitudeMinutes;
+
+export interface ShiftScheduleResult {
   instance: DailyInstance;
   /** Minutes still hanging past wind-down after best-effort compression —
-   * 0 means everything fit. */
+   * 0 means everything fit. Only ever non-zero for a later shift. */
   overflowMinutes: number;
+  /**
+   * What was actually applied, which can be smaller in magnitude than
+   * requested when pulling earlier: blocks are never moved before the
+   * current time or the day's wake time. The UI reports this so a
+   * clamped shift doesn't look like it silently did the wrong thing.
+   */
+  appliedDeltaMinutes: number;
 }
 
 function isCompressible(block: RenderedBlock): boolean {
@@ -89,27 +112,52 @@ export function compressToFit(
 
 /**
  * Shifts every flexible routine block starting at or after `nowMinutes`
- * forward by `deltaMinutes`, re-renders the day against the (unmoved)
- * events, and best-effort compresses the tail to fit wind-down.
+ * by `deltaMinutes`, re-renders the day against the (unmoved) events, and
+ * best-effort compresses the tail to fit wind-down.
+ *
+ * A **positive** delta is the classic "running late" push. A **negative**
+ * delta pulls the remainder of the day earlier, for when you're ahead and
+ * would rather not sit waiting for the schedule to catch up.
  *
  * Blocks that have already started (startMinutes < nowMinutes) are left
- * alone — this tool is for pushing what's still ahead, not for extending
- * whatever's in progress right now (that's Now & Next's "+10 min").
+ * alone — this tool moves what's still ahead, not whatever is in progress
+ * right now (that's Now & Next's "+10 min").
+ *
+ * Pulling earlier is clamped so no block starts before the current time
+ * or the day's wake time, whichever is later. The clamp is computed once
+ * across all affected blocks and applied uniformly, so their spacing is
+ * preserved rather than the earliest ones bunching up against the floor.
  */
-export function pushSchedule(
+export function shiftSchedule(
   date: string,
   dayOfWeek: DayOfWeek,
   template: DayTemplate,
   events: OneOffEvent[],
   nowMinutes: number,
-  deltaMinutes: PushDeltaMinutes,
-): PushScheduleResult {
+  deltaMinutes: ShiftDeltaMinutes,
+): ShiftScheduleResult {
+  const movable = template.blocks.filter(
+    (block) => block.flexibility === "flexible" && block.startMinutes >= nowMinutes,
+  );
+
+  let appliedDelta: number = deltaMinutes;
+  if (deltaMinutes < 0 && movable.length > 0) {
+    // You can't start something in the past, and nothing should precede
+    // the day's declared start.
+    const floor = Math.max(nowMinutes, template.wakeMinutes);
+    const earliestStart = Math.min(...movable.map((block) => block.startMinutes));
+    // `deltaMinutes` is negative, so the *larger* of the two is the
+    // smaller move — that's the one that respects the floor.
+    appliedDelta = Math.max(deltaMinutes, floor - earliestStart);
+    if (appliedDelta > 0) appliedDelta = 0; // already at or past the floor
+  }
+
   const shiftedBlocks = template.blocks.map((block) =>
     block.flexibility === "flexible" && block.startMinutes >= nowMinutes
       ? {
           ...block,
-          startMinutes: block.startMinutes + deltaMinutes,
-          endMinutes: block.endMinutes + deltaMinutes,
+          startMinutes: block.startMinutes + appliedDelta,
+          endMinutes: block.endMinutes + appliedDelta,
         }
       : block,
   );
@@ -126,5 +174,9 @@ export function pushSchedule(
     template.windDownMinutes,
   );
 
-  return { instance: { ...rendered, blocks }, overflowMinutes };
+  return {
+    instance: { ...rendered, blocks },
+    overflowMinutes,
+    appliedDeltaMinutes: appliedDelta,
+  };
 }

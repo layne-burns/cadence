@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { Category, DailyInstance, RenderedBlock } from "../../types/schedule";
 import type { AdherenceLog } from "../../types/adherence";
 import type { NewEventInput } from "../../hooks/useSchedule";
-import type { PushDeltaMinutes } from "../../engine/timeShifter";
+import type { ShiftDeltaMinutes } from "../../engine/timeShifter";
 import { TimeblockCard } from "./TimeblockCard";
 import { TimeGridRuler } from "./TimeGridRuler";
 import { EventForm } from "./EventForm";
@@ -30,9 +30,9 @@ interface DayViewProps {
   onToggleComplete: (block: RenderedBlock) => void;
   onAddEvent: (values: NewEventInput) => void;
   onOpenBlockDetail: (block: RenderedBlock) => void;
-  /** "Running late?" push — only meaningful (and only rendered) for
-   * today, since it shifts blocks relative to the current time. */
-  onPushSchedule?: (delta: PushDeltaMinutes) => void;
+  /** Schedule shift — only meaningful (and only rendered) for today,
+   * since it moves blocks relative to the current time. */
+  onShiftSchedule?: (delta: ShiftDeltaMinutes) => void;
 }
 
 export function DayView({
@@ -44,7 +44,7 @@ export function DayView({
   onToggleComplete,
   onAddEvent,
   onOpenBlockDetail,
-  onPushSchedule,
+  onShiftSchedule,
 }: DayViewProps) {
   const [addingEvent, setAddingEvent] = useState(false);
   const [runningLate, setRunningLate] = useState(false);
@@ -61,9 +61,9 @@ export function DayView({
           {scheduledCount === 0 ? "Nothing scheduled" : `${scheduledCount} block${scheduledCount === 1 ? "" : "s"}`}
         </h2>
         <div className="flex gap-2">
-          {isToday && onPushSchedule && (
+          {isToday && onShiftSchedule && (
             <Button size="sm" variant="secondary" onClick={() => setRunningLate(true)}>
-              <AlarmClockOff className="size-4" /> Running late?
+              <AlarmClockOff className="size-4" /> Shift schedule
             </Button>
           )}
           <Button size="sm" variant="secondary" onClick={() => setAddingEvent(true)}>
@@ -140,11 +140,11 @@ export function DayView({
         />
       </Modal>
 
-      {onPushSchedule && (
+      {onShiftSchedule && (
         <TimeShifterModal
           open={runningLate}
           onClose={() => setRunningLate(false)}
-          onPush={onPushSchedule}
+          onShift={onShiftSchedule}
         />
       )}
     </div>

@@ -53,9 +53,9 @@ export function CalendarScreen({ calendar, templates, now }: CalendarScreenProps
           onOpenBlockDetail={(block) =>
             setDetail({ date: calendar.anchorDate, block })
           }
-          onPushSchedule={
+          onShiftSchedule={
             calendar.anchorDate === today
-              ? (delta) => calendar.pushToday(nowMinutes, delta)
+              ? (delta) => calendar.shiftToday(nowMinutes, delta)
               : undefined
           }
         />

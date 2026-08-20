@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compressToFit, pushSchedule } from "./timeShifter";
+import { compressToFit, shiftSchedule } from "./timeShifter";
 import type { RenderedBlock, RoutineBlock, OneOffEvent } from "../types/schedule";
 import type { DayTemplate } from "../types/template";
 
@@ -47,9 +47,9 @@ function rendered(overrides: Partial<RenderedBlock> = {}): RenderedBlock {
   };
 }
 
-describe("pushSchedule", () => {
+describe("shiftSchedule", () => {
   it("shifts a flexible block starting at/after now forward by the delta", () => {
-    const result = pushSchedule(DATE, DAY, template([routineBlock()]), [], 8 * 60, 30);
+    const result = shiftSchedule(DATE, DAY, template([routineBlock()]), [], 8 * 60, 30);
     const block = result.instance.blocks[0]!;
     expect(block.startMinutes).toBe(9 * 60 + 30);
     expect(block.endMinutes).toBe(11 * 60 + 30);
@@ -57,7 +57,7 @@ describe("pushSchedule", () => {
 
   it("leaves a block that already started untouched", () => {
     // Block runs 9:00-11:00; "now" is 9:30, mid-block.
-    const result = pushSchedule(DATE, DAY, template([routineBlock()]), [], 9 * 60 + 30, 30);
+    const result = shiftSchedule(DATE, DAY, template([routineBlock()]), [], 9 * 60 + 30, 30);
     const block = result.instance.blocks[0]!;
     expect(block.startMinutes).toBe(9 * 60);
     expect(block.endMinutes).toBe(11 * 60);
@@ -65,7 +65,7 @@ describe("pushSchedule", () => {
 
   it("never shifts a fixed routine block", () => {
     const fixedBlock = routineBlock({ id: "wake", flexibility: "fixed" });
-    const result = pushSchedule(DATE, DAY, template([fixedBlock]), [], 8 * 60, 60);
+    const result = shiftSchedule(DATE, DAY, template([fixedBlock]), [], 8 * 60, 60);
     expect(result.instance.blocks[0]!.startMinutes).toBe(9 * 60);
   });
 
@@ -73,7 +73,7 @@ describe("pushSchedule", () => {
     // Block 9-11, event fixed at 10:00-10:30 (unaffected by the push).
     // After a 30-min push the block becomes 9:30-11:30 and should split
     // around the still-fixed event.
-    const result = pushSchedule(
+    const result = shiftSchedule(
       DATE,
       DAY,
       template([routineBlock()]),
@@ -98,7 +98,7 @@ describe("pushSchedule", () => {
     // 9:00-9:15 to 10:00-10:15, against a 9:20 wind-down. Compression can
     // only reclaim 5 min (15 - the 10-min floor) of the 55-min overflow.
     const shortBlock = routineBlock({ endMinutes: 9 * 60 + 15 });
-    const result = pushSchedule(
+    const result = shiftSchedule(
       DATE,
       DAY,
       template([shortBlock], 9 * 60 + 20),
@@ -107,6 +107,83 @@ describe("pushSchedule", () => {
       60,
     );
     expect(result.overflowMinutes).toBe(50);
+  });
+
+  it("reports the delta it actually applied", () => {
+    const result = shiftSchedule(DATE, DAY, template([routineBlock()]), [], 8 * 60, 30);
+    expect(result.appliedDeltaMinutes).toBe(30);
+  });
+});
+
+describe("shiftSchedule pulling earlier", () => {
+  it("moves a flexible block earlier by a negative delta", () => {
+    // Block 9:00-11:00, now is 8:00, wake 7:00 — plenty of room.
+    const result = shiftSchedule(DATE, DAY, template([routineBlock()]), [], 8 * 60, -30);
+    const block = result.instance.blocks[0]!;
+    expect(block.startMinutes).toBe(8 * 60 + 30);
+    expect(block.endMinutes).toBe(10 * 60 + 30);
+    expect(result.appliedDeltaMinutes).toBe(-30);
+  });
+
+  it("never pulls a block back before the current time", () => {
+    // Block starts 9:00 and it's already 8:45, so only 15 minutes of
+    // room exist even though 60 was asked for.
+    const result = shiftSchedule(
+      DATE,
+      DAY,
+      template([routineBlock()]),
+      [],
+      8 * 60 + 45,
+      -60,
+    );
+    expect(result.appliedDeltaMinutes).toBe(-15);
+    expect(result.instance.blocks[0]!.startMinutes).toBe(8 * 60 + 45);
+  });
+
+  it("never pulls a block before the day's wake time", () => {
+    // Wake is 7:00 and "now" is earlier than that (an early riser
+    // checking the app), so wake is the binding floor.
+    const early = template([routineBlock({ startMinutes: 7 * 60 + 20, endMinutes: 8 * 60 })]);
+    const result = shiftSchedule(DATE, DAY, early, [], 6 * 60, -60);
+    expect(result.appliedDeltaMinutes).toBe(-20);
+    expect(result.instance.blocks[0]!.startMinutes).toBe(7 * 60);
+  });
+
+  it("clamps uniformly so the spacing between blocks is preserved", () => {
+    // Two blocks 30 minutes apart; the clamp is driven by the earliest
+    // one, and both move by the same amount rather than bunching up.
+    const blocks = [
+      routineBlock({ id: "a", startMinutes: 9 * 60, endMinutes: 9 * 60 + 30 }),
+      routineBlock({ id: "b", startMinutes: 10 * 60, endMinutes: 10 * 60 + 30 }),
+    ];
+    const result = shiftSchedule(DATE, DAY, template(blocks), [], 8 * 60 + 45, -60);
+
+    expect(result.appliedDeltaMinutes).toBe(-15);
+    const [first, second] = result.instance.blocks;
+    expect(first!.startMinutes).toBe(8 * 60 + 45);
+    expect(second!.startMinutes).toBe(9 * 60 + 45);
+    // Still exactly an hour apart, as they were before the shift.
+    expect(second!.startMinutes - first!.startMinutes).toBe(60);
+  });
+
+  it("does nothing when the schedule is already up against the floor", () => {
+    const result = shiftSchedule(DATE, DAY, template([routineBlock()]), [], 9 * 60, -30);
+    expect(result.appliedDeltaMinutes).toBe(0);
+    expect(result.instance.blocks[0]!.startMinutes).toBe(9 * 60);
+  });
+
+  it("still leaves fixed blocks and events where they are", () => {
+    const fixedBlock = routineBlock({ id: "class", flexibility: "fixed" });
+    const result = shiftSchedule(DATE, DAY, template([fixedBlock]), [event()], 8 * 60, -30);
+    const routine = result.instance.blocks.find((b) => b.kind === "routine")!;
+    const evt = result.instance.blocks.find((b) => b.kind === "event")!;
+    expect(routine.startMinutes).toBe(9 * 60);
+    expect(evt.startMinutes).toBe(10 * 60);
+  });
+
+  it("cannot overflow wind-down when pulling earlier", () => {
+    const result = shiftSchedule(DATE, DAY, template([routineBlock()]), [], 8 * 60, -30);
+    expect(result.overflowMinutes).toBe(0);
   });
 });
 

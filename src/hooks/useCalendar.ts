@@ -22,7 +22,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as db from "../services/db";
 import { renderDailyInstance } from "../engine/scheduler";
-import { pushSchedule, type PushDeltaMinutes } from "../engine/timeShifter";
+import { shiftSchedule, type ShiftDeltaMinutes } from "../engine/timeShifter";
 import type { UseTemplatesResult } from "./useTemplates";
 import type { NewEventInput } from "./useSchedule";
 import {
@@ -91,12 +91,12 @@ export interface UseCalendarResult {
    * buffer blocks. Lets the detail modal offer edit/delete only where
    * there's something editable behind the block. */
   findSourceEvent: (block: RenderedBlock) => OneOffEvent | null;
-  /** "Running late?" — re-renders *today* with its remaining flexible
-   * blocks pushed forward by `deltaMinutes` (see engine/timeShifter.ts).
+  /** Re-renders *today* with its remaining flexible blocks shifted by
+   * `deltaMinutes`, negative to pull earlier (see engine/timeShifter.ts).
    * Session-local only, like Focus's nudges: not persisted, and reset
    * whenever the visible range's data reloads. Only meaningful — and only
    * wired up in the UI — while viewing today. */
-  pushToday: (nowMinutes: number, deltaMinutes: PushDeltaMinutes) => void;
+  shiftToday: (nowMinutes: number, deltaMinutes: ShiftDeltaMinutes) => void;
 }
 
 export function useCalendar(templates: UseTemplatesResult): UseCalendarResult {
@@ -106,7 +106,7 @@ export function useCalendar(templates: UseTemplatesResult): UseCalendarResult {
   const [events, setEvents] = useState<OneOffEvent[]>([]);
   const [logs, setLogs] = useState<AdherenceLog[]>([]);
   const [rangeLoading, setRangeLoading] = useState(true);
-  const [pushOverride, setPushOverride] = useState<DailyInstance | null>(null);
+  const [shiftOverride, setShiftOverride] = useState<DailyInstance | null>(null);
 
   const visibleDates = useMemo(
     () => visibleDatesFor(viewMode, anchorDate),
@@ -121,7 +121,7 @@ export function useCalendar(templates: UseTemplatesResult): UseCalendarResult {
     // effect, and the same false-positive from oxlint's set-state-in-effect
     // rule — see that file's comment for why this is the right pattern.
     setRangeLoading(true);
-    setPushOverride(null); // a reload invalidates any pending push override
+    setShiftOverride(null); // a reload invalidates any pending shift
     void Promise.all([
       db.getEventsInRange(rangeStart, rangeEnd),
       db.getAdherenceLogsInRange(rangeStart, rangeEnd),
@@ -144,8 +144,8 @@ export function useCalendar(templates: UseTemplatesResult): UseCalendarResult {
   const instances = useMemo(() => {
     const map: Record<string, DailyInstance> = {};
     for (const date of visibleDates) {
-      if (pushOverride && pushOverride.date === date) {
-        map[date] = pushOverride;
+      if (shiftOverride && shiftOverride.date === date) {
+        map[date] = shiftOverride;
         continue;
       }
       const dayOfWeek = dayOfWeekForIso(date);
@@ -154,7 +154,7 @@ export function useCalendar(templates: UseTemplatesResult): UseCalendarResult {
       map[date] = renderDailyInstance(date, dayOfWeek, template, eventsForDate);
     }
     return map;
-  }, [visibleDates, blueprint, events, pushOverride]);
+  }, [visibleDates, blueprint, events, shiftOverride]);
 
   const goPrev = useCallback(() => {
     if (viewMode === "month") {
@@ -242,13 +242,13 @@ export function useCalendar(templates: UseTemplatesResult): UseCalendarResult {
     [events],
   );
 
-  const pushToday = useCallback(
-    (nowMinutes: number, deltaMinutes: PushDeltaMinutes) => {
+  const shiftToday = useCallback(
+    (nowMinutes: number, deltaMinutes: ShiftDeltaMinutes) => {
       const todayIso = toIsoDate(new Date());
       const dayOfWeek = dayOfWeekForIso(todayIso);
       const template = blueprint.days[dayOfWeek];
       const eventsToday = events.filter((event) => event.date === todayIso);
-      const { instance } = pushSchedule(
+      const { instance } = shiftSchedule(
         todayIso,
         dayOfWeek,
         template,
@@ -256,7 +256,7 @@ export function useCalendar(templates: UseTemplatesResult): UseCalendarResult {
         nowMinutes,
         deltaMinutes,
       );
-      setPushOverride(instance);
+      setShiftOverride(instance);
     },
     [blueprint, events],
   );
@@ -278,6 +278,6 @@ export function useCalendar(templates: UseTemplatesResult): UseCalendarResult {
     updateEvent,
     removeEvent,
     findSourceEvent,
-    pushToday,
+    shiftToday,
   };
 }
