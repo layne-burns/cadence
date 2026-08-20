@@ -21,6 +21,7 @@ import { recordDay } from "../engine/streaks";
 import { addDaysIso, dayOfWeekForIso, toIsoDate } from "../lib/time";
 import { createEmptyStreakState, type StreakState } from "../types/adherence";
 import type { UseTemplatesResult } from "./useTemplates";
+import type { UseSettingsResult } from "./useSettings";
 
 // Safety cap on how many days a single catch-up pass will walk, so a
 // stale localStorage/IndexedDB state from months of not opening the app
@@ -32,12 +33,16 @@ export interface UseStreakResult {
   loading: boolean;
 }
 
-export function useStreak(templates: UseTemplatesResult): UseStreakResult {
+export function useStreak(
+  templates: UseTemplatesResult,
+  settings: UseSettingsResult,
+): UseStreakResult {
   const [streakState, setStreakState] = useState<StreakState>(createEmptyStreakState);
   const [loading, setLoading] = useState(true);
+  const streakSettings = settings.settings.streak;
 
   useEffect(() => {
-    if (templates.loading) return;
+    if (templates.loading || settings.loading) return;
     let cancelled = false;
 
     void (async () => {
@@ -62,7 +67,7 @@ export function useStreak(templates: UseTemplatesResult): UseStreakResult {
           db.getAdherenceLogsForDate(date),
         ]);
         const instance = renderDailyInstance(date, dayOfWeek, dayTemplate, events);
-        state = recordDay(state, date, instance, logs);
+        state = recordDay(state, date, instance, logs, streakSettings);
       }
 
       if (datesToRecord.length > 0) {
@@ -77,7 +82,12 @@ export function useStreak(templates: UseTemplatesResult): UseStreakResult {
     return () => {
       cancelled = true;
     };
-  }, [templates.loading, templates.blueprint]);
+    // `streakSettings` is a dependency on purpose: changing which days are
+    // ignored changes what the catch-up pass should have recorded, so the
+    // effect re-runs. Note this only affects days recorded *from now on* —
+    // history already written under the old rules isn't retroactively
+    // rewritten. See CLAUDE.md for why that's a known limitation.
+  }, [templates.loading, templates.blueprint, settings.loading, streakSettings]);
 
   return { streakState, loading };
 }

@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import * as db from "./db";
 import { createEmptyBlueprint } from "../types/template";
 import { createEmptyStreakState } from "../types/adherence";
+import { createDefaultSettings } from "../types/settings";
 import type { AdherenceLog } from "../types/adherence";
 import type { OneOffEvent } from "../types/schedule";
 
@@ -142,6 +143,7 @@ describe("bulk export/import", () => {
       events: [event],
       adherenceLogs: [log],
       streakState,
+      settings: createDefaultSettings(),
     });
   });
 
@@ -154,6 +156,7 @@ describe("bulk export/import", () => {
       events: [makeEvent({ id: "fresh" })],
       adherenceLogs: [makeLog({ id: "fresh-log" })],
       streakState: { ...createEmptyStreakState(), currentStreak: 7 },
+      settings: createDefaultSettings(),
     };
 
     await db.replaceAllData(incoming);

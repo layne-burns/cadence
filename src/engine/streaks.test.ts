@@ -3,9 +3,11 @@ import {
   applyDayOutcome,
   computeCompletionRatio,
   computeDayOutcome,
+  isDayExcluded,
   recordDay,
   SUCCESS_THRESHOLD,
 } from "./streaks";
+import type { StreakSettings } from "../types/settings";
 import { createEmptyStreakState } from "../types/adherence";
 import type { AdherenceLog } from "../types/adherence";
 import type { DailyInstance, RenderedBlock } from "../types/schedule";
@@ -26,6 +28,20 @@ function block(overrides: Partial<RenderedBlock> = {}): RenderedBlock {
 
 function instance(blocks: RenderedBlock[], date = "2026-08-24"): DailyInstance {
   return { date, dayOfWeek: "monday", wakeMinutes: 7 * 60, windDownMinutes: 22 * 60, blocks };
+}
+
+function saturday(blocks: RenderedBlock[] = []): DailyInstance {
+  return {
+    date: "2026-08-22",
+    dayOfWeek: "saturday",
+    wakeMinutes: 10 * 60 + 30,
+    windDownMinutes: 22 * 60,
+    blocks,
+  };
+}
+
+function streakSettings(overrides: Partial<StreakSettings> = {}): StreakSettings {
+  return { ignoredDays: [], ignoreOnlyWhenNoEvents: false, ...overrides };
 }
 
 function log(renderedBlockId: string, completed: boolean): AdherenceLog {
@@ -159,5 +175,118 @@ describe("recordDay", () => {
     const state = recordDay(createEmptyStreakState(), "2026-08-24", inst, [log("a", true)]);
     expect(state.currentStreak).toBe(1);
     expect(state.history[0]).toMatchObject({ date: "2026-08-24", succeeded: true });
+  });
+});
+
+describe("isDayExcluded", () => {
+  it("is false when the weekday isn't in the ignored list", () => {
+    expect(isDayExcluded(saturday(), streakSettings({ ignoredDays: ["sunday"] }))).toBe(
+      false,
+    );
+  });
+
+  it("is true for an ignored weekday when the event exception is off", () => {
+    expect(isDayExcluded(saturday(), streakSettings({ ignoredDays: ["saturday"] }))).toBe(
+      true,
+    );
+  });
+
+  it("still excludes an ignored day that has only routine blocks, under the event exception", () => {
+    const withRoutine = saturday([block({ id: "r", kind: "routine" })]);
+    expect(
+      isDayExcluded(
+        withRoutine,
+        streakSettings({ ignoredDays: ["saturday"], ignoreOnlyWhenNoEvents: true }),
+      ),
+    ).toBe(true);
+  });
+
+  it("pulls an ignored day back in when it has a one-off event, under the exception", () => {
+    const withEvent = saturday([block({ id: "e", kind: "event", flexibility: "fixed" })]);
+    expect(
+      isDayExcluded(
+        withEvent,
+        streakSettings({ ignoredDays: ["saturday"], ignoreOnlyWhenNoEvents: true }),
+      ),
+    ).toBe(false);
+  });
+
+  it("ignores the day regardless of events when the exception is off", () => {
+    const withEvent = saturday([block({ id: "e", kind: "event", flexibility: "fixed" })]);
+    expect(
+      isDayExcluded(withEvent, streakSettings({ ignoredDays: ["saturday"] })),
+    ).toBe(true);
+  });
+});
+
+describe("excluded days in streak math", () => {
+  const succeed = (date: string) => ({ date, completionRatio: 1, succeeded: true });
+
+  it("neither extends nor breaks the streak, and records itself as excluded", () => {
+    let state = createEmptyStreakState();
+    state = applyDayOutcome(state, succeed("2026-08-21"));
+    expect(state.currentStreak).toBe(1);
+
+    state = applyDayOutcome(state, succeed("2026-08-22"), true);
+
+    expect(state.currentStreak).toBe(1); // unchanged
+    expect(state.longestStreak).toBe(1);
+    expect(state.history.at(-1)).toMatchObject({
+      date: "2026-08-22",
+      excluded: true,
+      succeeded: false,
+      usedGraceDay: false,
+    });
+  });
+
+  it("does not consume a grace day", () => {
+    // An excluded day must not burn the protection that exists for the
+    // weekdays you actually care about.
+    let state = createEmptyStreakState();
+    state = applyDayOutcome(state, { date: "2026-08-22", completionRatio: 0, succeeded: false }, true);
+    expect(state.graceDayDatesUsed).toEqual([]);
+
+    // The grace day is therefore still available for the next real miss.
+    state = applyDayOutcome(state, { date: "2026-08-23", completionRatio: 0, succeeded: false });
+    expect(state.history.at(-1)).toMatchObject({ usedGraceDay: true });
+  });
+
+  it("stops an empty ignored weekend from inflating the streak", () => {
+    // The bug this feature exists to fix: computeCompletionRatio returns 1
+    // for a day with nothing scheduled, so an empty Saturday would
+    // otherwise count as a success every single week.
+    const emptySaturday = saturday();
+    const ignoreWeekend = streakSettings({ ignoredDays: ["saturday", "sunday"] });
+
+    const withoutSetting = recordDay(
+      createEmptyStreakState(),
+      "2026-08-22",
+      emptySaturday,
+      [],
+    );
+    expect(withoutSetting.currentStreak).toBe(1); // inflated
+
+    const withSetting = recordDay(
+      createEmptyStreakState(),
+      "2026-08-22",
+      emptySaturday,
+      [],
+      ignoreWeekend,
+    );
+    expect(withSetting.currentStreak).toBe(0); // correctly inert
+    expect(withSetting.history.at(-1)?.excluded).toBe(true);
+  });
+
+  it("counts an ignored weekend day that has a one-off event, under the exception", () => {
+    const busySaturday = saturday([block({ id: "e", kind: "event", flexibility: "fixed" })]);
+    const state = recordDay(
+      createEmptyStreakState(),
+      "2026-08-22",
+      busySaturday,
+      [log("e", true)],
+      streakSettings({ ignoredDays: ["saturday"], ignoreOnlyWhenNoEvents: true }),
+    );
+    expect(state.currentStreak).toBe(1);
+    expect(state.history.at(-1)?.excluded).toBeFalsy();
   });
 });

@@ -7,6 +7,7 @@ import {
 } from "./transfer";
 import { createEmptyBlueprint } from "../types/template";
 import { createEmptyStreakState } from "../types/adherence";
+import { createDefaultSettings } from "../types/settings";
 import type { GistPayload } from "../types/gist";
 
 function validPayload(): GistPayload {
@@ -154,6 +155,54 @@ describe("parseImportFile", () => {
     );
     expect(result.ok).toBe(true);
   });
+
+  it("accepts a payload with no settings key at all (files predating settings)", () => {
+    // The owner's hand-authored base file is exactly this shape. Adding
+    // settings must never invalidate files written before it existed.
+    const payload = validPayload();
+    expect("settings" in payload).toBe(false);
+    const result = parseImportFile(serializeExport(payload));
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.payload.settings).toBeUndefined();
+  });
+
+  it("accepts a payload carrying valid settings", () => {
+    const payload = {
+      ...validPayload(),
+      settings: {
+        streak: { ignoredDays: ["saturday", "sunday"], ignoreOnlyWhenNoEvents: true },
+      },
+    };
+    const result = parseImportFile(JSON.stringify(payload));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.payload.settings?.streak.ignoredDays).toEqual(["saturday", "sunday"]);
+    }
+  });
+
+  it("rejects settings with a bogus weekday name", () => {
+    const payload = {
+      ...validPayload(),
+      settings: { streak: { ignoredDays: ["caturday"], ignoreOnlyWhenNoEvents: false } },
+    };
+    const result = parseImportFile(JSON.stringify(payload));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.includes("weekday names"))).toBe(true);
+    }
+  });
+
+  it("rejects a non-boolean ignoreOnlyWhenNoEvents", () => {
+    const payload = {
+      ...validPayload(),
+      settings: { streak: { ignoredDays: [], ignoreOnlyWhenNoEvents: "yes" } },
+    };
+    const result = parseImportFile(JSON.stringify(payload));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.includes("ignoreOnlyWhenNoEvents"))).toBe(true);
+    }
+  });
 });
 
 describe("buildExportPayload", () => {
@@ -163,6 +212,7 @@ describe("buildExportPayload", () => {
       events: [],
       adherenceLogs: [],
       streakState: createEmptyStreakState(),
+      settings: createDefaultSettings(),
     };
     const payload = buildExportPayload(data);
     expect(payload.version).toBe(1);
@@ -176,6 +226,7 @@ describe("buildExportPayload", () => {
       events: [],
       adherenceLogs: [],
       streakState: createEmptyStreakState(),
+      settings: createDefaultSettings(),
     });
     expect(parseImportFile(serializeExport(payload)).ok).toBe(true);
   });

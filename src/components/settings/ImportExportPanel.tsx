@@ -2,6 +2,7 @@ import { Download, Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "../common/Button";
 import * as db from "../../services/db";
+import { createDefaultSettings } from "../../types/settings";
 import {
   buildExportPayload,
   downloadJsonFile,
@@ -58,6 +59,9 @@ export function ImportExportPanel() {
         events: result.payload.events,
         adherenceLogs: result.payload.adherenceLogs,
         streakState: result.payload.streakState,
+        // Absent in files written before settings existed — including the
+        // owner's hand-authored base file.
+        settings: result.payload.settings ?? createDefaultSettings(),
       },
     });
   }

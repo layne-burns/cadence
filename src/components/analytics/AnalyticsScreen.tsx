@@ -1,6 +1,7 @@
 import { useStreak } from "../../hooks/useStreak";
 import { useAnalyticsData } from "../../hooks/useAnalyticsData";
 import type { UseTemplatesResult } from "../../hooks/useTemplates";
+import type { UseSettingsResult } from "../../hooks/useSettings";
 import { StreakCard } from "./StreakCard";
 import { ConsistencyTrend } from "./ConsistencyTrend";
 import { DropoffHeatmap } from "./DropoffHeatmap";
@@ -9,10 +10,11 @@ import { Card } from "../common/Card";
 
 interface AnalyticsScreenProps {
   templates: UseTemplatesResult;
+  settings: UseSettingsResult;
 }
 
-export function AnalyticsScreen({ templates }: AnalyticsScreenProps) {
-  const { streakState, loading: streakLoading } = useStreak(templates);
+export function AnalyticsScreen({ templates, settings }: AnalyticsScreenProps) {
+  const { streakState, loading: streakLoading } = useStreak(templates, settings);
   const analytics = useAnalyticsData(templates);
 
   if (streakLoading || analytics.loading) {

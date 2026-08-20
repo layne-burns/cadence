@@ -5,10 +5,11 @@ import { CalendarScreen } from "./components/timeline/CalendarScreen";
 import { NowAndNextCard } from "./components/focus/NowAndNextCard";
 import { AnalyticsScreen } from "./components/analytics/AnalyticsScreen";
 import { WeeklyBlueprintGrid } from "./components/weekly/WeeklyBlueprintGrid";
-import { SettingsModal } from "./components/settings/SettingsModal";
+import { SettingsScreen } from "./components/settings/SettingsScreen";
 import { useCalendar } from "./hooks/useCalendar";
 import { useSchedule } from "./hooks/useSchedule";
 import { useTemplates } from "./hooks/useTemplates";
+import { useSettings } from "./hooks/useSettings";
 import { useSync } from "./hooks/useSync";
 import { useTheme } from "./hooks/useTheme";
 import { useNowTick } from "./hooks/useNowTick";
@@ -23,8 +24,11 @@ import {
 
 function App() {
   const [view, setView] = useState<NavView>("calendar");
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const theme = useTheme();
+  // One shared settings instance — the settings screen writes it and
+  // useStreak reads it, so a separate copy would mean toggling an ignored
+  // day didn't affect streak math until a reload.
+  const settings = useSettings();
   // Subscribes to db-level change notifications itself — nothing needs to
   // tell it when to push. See hooks/useSync.ts.
   const sync = useSync();
@@ -55,14 +59,13 @@ function App() {
             calendar.visibleDates[calendar.visibleDates.length - 1] as string,
           );
 
-  const headerLabel =
-    view === "calendar"
-      ? calendarLabel
-      : view === "focus"
-        ? "Focus"
-        : view === "analytics"
-          ? "Analytics"
-          : "Blueprint";
+  const HEADER_LABELS: Record<Exclude<NavView, "calendar">, string> = {
+    focus: "Focus",
+    analytics: "Analytics",
+    blueprint: "Blueprint",
+    settings: "Settings",
+  };
+  const headerLabel = view === "calendar" ? calendarLabel : HEADER_LABELS[view];
 
   return (
     // A fixed h-svh (not min-h-svh) is load-bearing here: main's flex-1 +
@@ -77,7 +80,6 @@ function App() {
         onPrev={view === "calendar" ? calendar.goPrev : undefined}
         onNext={view === "calendar" ? calendar.goNext : undefined}
         onToday={view === "calendar" ? calendar.goToday : undefined}
-        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       {/* min-h-0 overrides the flex item's default auto min-height — without
@@ -112,20 +114,15 @@ function App() {
             </div>
           )
         ) : view === "analytics" ? (
-          <AnalyticsScreen templates={templates} />
+          <AnalyticsScreen templates={templates} settings={settings} />
+        ) : view === "settings" ? (
+          <SettingsScreen sync={sync} theme={theme} settings={settings} />
         ) : (
           <WeeklyBlueprintGrid templates={templates} />
         )}
       </main>
 
       <BottomNav active={view} onChange={setView} />
-
-      <SettingsModal
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        sync={sync}
-        theme={theme}
-      />
     </div>
   );
 }

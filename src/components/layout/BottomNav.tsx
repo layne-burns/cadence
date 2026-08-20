@@ -1,8 +1,8 @@
-import { CalendarDays, LineChart, ListChecks, Target } from "lucide-react";
+import { CalendarDays, LineChart, ListChecks, Settings, Target } from "lucide-react";
 import type { ComponentType } from "react";
 import { cx } from "../../lib/cx";
 
-export type NavView = "calendar" | "focus" | "analytics" | "blueprint";
+export type NavView = "calendar" | "focus" | "analytics" | "blueprint" | "settings";
 
 interface Tab {
   id: NavView;
@@ -10,11 +10,14 @@ interface Tab {
   icon: ComponentType<{ className?: string }>;
 }
 
+// Settings sits last so it lands bottom-right, where a settings affordance
+// is conventionally reached for and where a thumb finds it on a phone.
 const TABS: readonly Tab[] = [
   { id: "calendar", label: "Calendar", icon: CalendarDays },
   { id: "focus", label: "Focus", icon: Target },
   { id: "analytics", label: "Analytics", icon: LineChart },
   { id: "blueprint", label: "Blueprint", icon: ListChecks },
+  { id: "settings", label: "Settings", icon: Settings },
 ];
 
 interface BottomNavProps {

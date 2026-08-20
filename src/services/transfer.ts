@@ -19,7 +19,7 @@
 
 import type { GistPayload } from "../types/gist";
 import type { AllLocalData } from "./db";
-import { DAYS_OF_WEEK } from "../types/schedule";
+import { DAYS_OF_WEEK, type DayOfWeek } from "../types/schedule";
 
 export type ImportResult =
   | { ok: true; payload: GistPayload }
@@ -170,6 +170,36 @@ function checkStreakState(value: unknown, errors: string[]): void {
   }
 }
 
+/** Optional on the wire — absent means "use defaults", which is not an
+ * error. Only its *shape* is checked, and only when it's actually there. */
+function checkSettings(value: unknown, errors: string[]): void {
+  if (value === undefined || value === null) return;
+  if (!isRecord(value)) {
+    errors.push("settings is not an object");
+    return;
+  }
+  if (value.streak === undefined) return;
+  if (!isRecord(value.streak)) {
+    errors.push("settings.streak is not an object");
+    return;
+  }
+  if (value.streak.ignoredDays !== undefined) {
+    if (!Array.isArray(value.streak.ignoredDays)) {
+      errors.push("settings.streak.ignoredDays must be an array");
+    } else if (
+      !value.streak.ignoredDays.every((day) => DAYS_OF_WEEK.includes(day as DayOfWeek))
+    ) {
+      errors.push("settings.streak.ignoredDays must contain only weekday names");
+    }
+  }
+  if (
+    value.streak.ignoreOnlyWhenNoEvents !== undefined &&
+    typeof value.streak.ignoreOnlyWhenNoEvents !== "boolean"
+  ) {
+    errors.push("settings.streak.ignoreOnlyWhenNoEvents must be a boolean");
+  }
+}
+
 /**
  * Parses and validates the contents of a backup file. Never throws — a
  * malformed file is a normal thing for a user to hand us, so it comes
@@ -199,6 +229,7 @@ export function parseImportFile(raw: string): ImportResult {
   checkEvents(parsed.events, errors);
   checkAdherenceLogs(parsed.adherenceLogs, errors);
   checkStreakState(parsed.streakState, errors);
+  checkSettings(parsed.settings, errors);
 
   if (errors.length > 0) return { ok: false, errors };
 
@@ -217,6 +248,7 @@ export function buildExportPayload(data: AllLocalData): GistPayload {
     events: data.events,
     adherenceLogs: data.adherenceLogs,
     streakState: data.streakState,
+    settings: data.settings,
   };
 }
 

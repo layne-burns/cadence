@@ -21,9 +21,14 @@ import type { WeeklyBlueprint } from "../types/template";
 import { createEmptyBlueprint } from "../types/template";
 import type { AdherenceLog, StreakState } from "../types/adherence";
 import { createEmptyStreakState } from "../types/adherence";
+import type { AppSettings } from "../types/settings";
+import { createDefaultSettings } from "../types/settings";
 
 const DB_NAME = "cadence";
-const DB_VERSION = 1;
+// v2 added the `settings` store. Bumping this runs `upgrade` against
+// existing databases, so every store creation below must be guarded —
+// a v1 database already has the first four and would throw on re-create.
+const DB_VERSION = 2;
 const SINGLETON_KEY = "current";
 
 interface CadenceDB extends DBSchema {
@@ -45,6 +50,10 @@ interface CadenceDB extends DBSchema {
     key: string;
     value: StreakState;
   };
+  settings: {
+    key: string;
+    value: AppSettings;
+  };
 }
 
 let dbPromise: Promise<IDBPDatabase<CadenceDB>> | null = null;
@@ -55,13 +64,29 @@ let dbPromise: Promise<IDBPDatabase<CadenceDB>> | null = null;
 function getDb(): Promise<IDBPDatabase<CadenceDB>> {
   if (!dbPromise) {
     dbPromise = openDB<CadenceDB>(DB_NAME, DB_VERSION, {
+      // Guarded per store rather than switched on `oldVersion`: this runs
+      // for a brand-new database (oldVersion 0) and for an existing v1
+      // upgrading to v2, and "create it if it isn't there" is correct and
+      // readable for both. Existing data is untouched — adding a store
+      // never migrates rows in the others.
       upgrade(db) {
-        db.createObjectStore("blueprint");
-        const events = db.createObjectStore("events", { keyPath: "id" });
-        events.createIndex("by-date", "date");
-        const logs = db.createObjectStore("adherenceLogs", { keyPath: "id" });
-        logs.createIndex("by-date", "date");
-        db.createObjectStore("streak");
+        if (!db.objectStoreNames.contains("blueprint")) {
+          db.createObjectStore("blueprint");
+        }
+        if (!db.objectStoreNames.contains("events")) {
+          const events = db.createObjectStore("events", { keyPath: "id" });
+          events.createIndex("by-date", "date");
+        }
+        if (!db.objectStoreNames.contains("adherenceLogs")) {
+          const logs = db.createObjectStore("adherenceLogs", { keyPath: "id" });
+          logs.createIndex("by-date", "date");
+        }
+        if (!db.objectStoreNames.contains("streak")) {
+          db.createObjectStore("streak");
+        }
+        if (!db.objectStoreNames.contains("settings")) {
+          db.createObjectStore("settings");
+        }
       },
     });
   }
@@ -217,6 +242,24 @@ export async function saveStreakState(state: StreakState): Promise<void> {
   notifyDataChanged();
 }
 
+// ---- Settings ------------------------------------------------------------
+
+export async function getSettings(): Promise<AppSettings> {
+  const db = await getDb();
+  const stored = await db.get("settings", SINGLETON_KEY);
+  // Merged rather than returned as-is so a payload written by an older
+  // version (or an imported file predating a new setting) picks up
+  // defaults for anything it doesn't know about.
+  const defaults = createDefaultSettings();
+  return stored ? { ...defaults, ...stored, streak: { ...defaults.streak, ...stored.streak } } : defaults;
+}
+
+export async function saveSettings(settings: AppSettings): Promise<void> {
+  const db = await getDb();
+  await db.put("settings", settings, SINGLETON_KEY);
+  notifyDataChanged();
+}
+
 // ---- Bulk export/import -------------------------------------------------
 //
 // Shared by two callers that both need "everything, as one object": Gist
@@ -231,16 +274,18 @@ export interface AllLocalData {
   events: OneOffEvent[];
   adherenceLogs: AdherenceLog[];
   streakState: StreakState;
+  settings: AppSettings;
 }
 
 export async function exportAllData(): Promise<AllLocalData> {
-  const [blueprint, events, adherenceLogs, streakState] = await Promise.all([
+  const [blueprint, events, adherenceLogs, streakState, settings] = await Promise.all([
     getBlueprint(),
     getAllEvents(),
     getAllAdherenceLogs(),
     getStreakState(),
+    getSettings(),
   ]);
-  return { blueprint, events, adherenceLogs, streakState };
+  return { blueprint, events, adherenceLogs, streakState, settings };
 }
 
 export interface ReplaceAllDataOptions {
@@ -266,6 +311,9 @@ export async function replaceAllData(
 
   await db.put("blueprint", data.blueprint, SINGLETON_KEY);
   await db.put("streak", data.streakState, SINGLETON_KEY);
+  // `settings` is optional on the wire (files exported before settings
+  // existed don't carry it), so fall back rather than writing undefined.
+  await db.put("settings", data.settings ?? createDefaultSettings(), SINGLETON_KEY);
 
   const eventsTx = db.transaction("events", "readwrite");
   await eventsTx.store.clear();

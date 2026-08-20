@@ -50,6 +50,16 @@ export interface DayOutcome {
   completionRatio: number;
   succeeded: boolean;
   usedGraceDay: boolean;
+  /**
+   * The day was excluded from streak math by the user's ignored-days
+   * setting, so it neither extended nor broke the streak. Still recorded
+   * in history so the consistency chart can show the gap honestly rather
+   * than making an ignored Saturday look like a day that never existed.
+   *
+   * Optional because `StreakState.history` persisted before this field
+   * existed; treat a missing value as `false`.
+   */
+  excluded?: boolean;
 }
 
 /**

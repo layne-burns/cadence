@@ -30,6 +30,7 @@ import {
   shouldPullBeforePush,
 } from "../services/gistSync";
 import type { GistPayload, SyncStatus } from "../types/gist";
+import { createDefaultSettings } from "../types/settings";
 
 const PUSH_DEBOUNCE_MS = 2000;
 const LAST_KNOWN_REMOTE_UPDATED_AT_KEY = "cadence.lastKnownRemoteUpdatedAt";
@@ -42,6 +43,7 @@ function buildPayload(data: db.AllLocalData): GistPayload {
     events: data.events,
     adherenceLogs: data.adherenceLogs,
     streakState: data.streakState,
+    settings: data.settings,
   };
 }
 
@@ -99,6 +101,7 @@ export function useSync(): UseSyncResult {
           events: payload.events,
           adherenceLogs: payload.adherenceLogs,
           streakState: payload.streakState,
+          settings: payload.settings ?? createDefaultSettings(),
         },
         // Silent: this write came *from* the remote, so notifying would
         // schedule a push of the data we just pulled.

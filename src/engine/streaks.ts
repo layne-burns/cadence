@@ -8,6 +8,8 @@
 
 import type { DailyInstance } from "../types/schedule";
 import type { AdherenceLog, DayOutcome, StreakState } from "../types/adherence";
+import type { StreakSettings } from "../types/settings";
+import { createDefaultSettings } from "../types/settings";
 
 export const SUCCESS_THRESHOLD = 0.75;
 const GRACE_WINDOW_DAYS = 7;
@@ -59,6 +61,31 @@ export function computeDayOutcome(
 }
 
 /**
+ * Whether a day is excluded from streak math by the user's settings.
+ *
+ * This exists because `computeCompletionRatio` returns 1 for a day with
+ * nothing scheduled — sensible in isolation ("you failed nothing"), but
+ * it means a permanently empty Saturday counts as a *success* every week
+ * and quietly inflates the streak. Excluding such days is the fix, and
+ * it has to happen here rather than inside the ratio, because "no blocks
+ * today" and "this day doesn't count" are genuinely different facts: a
+ * weekday you simply cleared should still count as a win.
+ *
+ * Settings are passed in rather than read from storage so this module
+ * stays pure — see the architecture rules in CLAUDE.md.
+ */
+export function isDayExcluded(
+  instance: DailyInstance,
+  settings: StreakSettings,
+): boolean {
+  if (!settings.ignoredDays.includes(instance.dayOfWeek)) return false;
+  if (!settings.ignoreOnlyWhenNoEvents) return true;
+  // A deliberately scheduled one-off pulls the day back into the streak.
+  const hasEvent = instance.blocks.some((block) => block.kind === "event");
+  return !hasEvent;
+}
+
+/**
  * Folds one more day's outcome into the running streak state. Callers
  * are expected to call this once per day, in chronological order —
  * it doesn't re-derive order from `history` itself.
@@ -73,10 +100,27 @@ export function computeDayOutcome(
 export function applyDayOutcome(
   state: StreakState,
   outcomeInput: Omit<DayOutcome, "usedGraceDay">,
+  excluded = false,
 ): StreakState {
   const prunedGraceDates = state.graceDayDatesUsed.filter(
     (used) => daysBetween(used, outcomeInput.date) <= GRACE_TRACKING_DAYS,
   );
+
+  if (excluded) {
+    // Recorded but inert: the streak, the longest-streak record, and the
+    // grace-day budget all pass through untouched. An excluded day is
+    // neither a win nor a miss, so it must not consume a grace day —
+    // otherwise ignoring your weekends would burn the very protection
+    // that exists for the weekdays you care about.
+    return {
+      ...state,
+      graceDayDatesUsed: prunedGraceDates,
+      history: [
+        ...state.history,
+        { ...outcomeInput, succeeded: false, usedGraceDay: false, excluded: true },
+      ].slice(-HISTORY_LIMIT),
+    };
+  }
 
   if (outcomeInput.succeeded) {
     const currentStreak = state.currentStreak + 1;
@@ -111,15 +155,24 @@ export function applyDayOutcome(
   };
 }
 
-/** Convenience one-call wrapper combining the two pieces above — what a
- * "close out the day" hook or scheduled job actually calls. Kept as two
+/** Convenience one-call wrapper combining the pieces above — what a
+ * "close out the day" hook or scheduled job actually calls. Kept as
  * separately-testable pure functions rather than only this, so the
- * threshold math and the grace-day rules can each be tested in isolation. */
+ * threshold math, the exclusion rule, and the grace-day rules can each be
+ * tested in isolation.
+ *
+ * `settings` defaults to "nothing ignored" so existing callers and tests
+ * that predate day exclusions keep their original behaviour. */
 export function recordDay(
   state: StreakState,
   date: string,
   instance: DailyInstance,
   logs: AdherenceLog[],
+  settings: StreakSettings = createDefaultSettings().streak,
 ): StreakState {
-  return applyDayOutcome(state, computeDayOutcome(date, instance, logs));
+  return applyDayOutcome(
+    state,
+    computeDayOutcome(date, instance, logs),
+    isDayExcluded(instance, settings),
+  );
 }

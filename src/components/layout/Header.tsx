@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Settings } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 interface HeaderProps {
   label: string;
@@ -10,17 +10,9 @@ interface HeaderProps {
   onPrev?: () => void;
   onNext?: () => void;
   onToday?: () => void;
-  onOpenSettings: () => void;
 }
 
-export function Header({
-  label,
-  showTodayLink,
-  onPrev,
-  onNext,
-  onToday,
-  onOpenSettings,
-}: HeaderProps) {
+export function Header({ label, showTodayLink, onPrev, onNext, onToday }: HeaderProps) {
   return (
     <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
       <div className="flex items-center gap-2">
@@ -55,15 +47,10 @@ export function Header({
           </button>
         )}
       </div>
-      <button
-        type="button"
-        onClick={onOpenSettings}
-        title="Settings"
-        aria-label="Settings"
-        className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
-      >
-        <Settings className="size-4" />
-      </button>
+      {/* Settings moved to its own bottom-nav tab — nothing lives on the
+          right side of the header now, but the flex container stays so the
+          label keeps its left alignment. */}
+      <span />
     </header>
   );
 }
