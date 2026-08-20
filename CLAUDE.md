@@ -93,6 +93,147 @@ the most leverage.
 commands, working style — is below, unchanged in nature from how it's
 guided this project through Phases 0–6.
 
+## Requested changes (Phase 8 backlog, 2026-08-20)
+
+Requested by the owner after living with the app for a day. Ordered
+roughly by dependency, not priority.
+
+### 1. Recurring one-off events
+
+`EventForm` currently creates a single-date `OneOffEvent`. Add a
+"recurring" toggle that reveals day-of-week checkboxes, so one entry can
+land on several days. Open design question worth settling before coding:
+does this create N separate `OneOffEvent` rows, or does `OneOffEvent`
+grow an optional recurrence rule that the collision engine expands at
+render time? The latter is cleaner for editing ("change all") but touches
+`renderDailyInstance`'s input contract and the range queries in
+`useCalendar`; the former is dumber but needs no engine change. **Note
+this overlaps conceptually with the weekly blueprint** — decide where the
+line sits between "recurring event" and "blueprint block" so the two
+don't become redundant ways to express the same thing.
+
+### 2. Boilerplate categories
+
+Ship a small set of starter categories (the owner's real ones are
+Academics, Household, Nutrition, Routines) so a new user isn't staring at
+an empty picker, and so labels stay consistent across days rather than
+drifting ("Cleaning" vs "Daily Cleaning"). Free-text entry must remain —
+these are a starting point and a consistency nudge, not a fixed enum.
+
+### 3. Robust cloud sync
+
+Gist sync is wired end-to-end but **has never run against a real token**.
+"Properly set up" means at minimum: verify the live round trip, then
+harden it. Known weak points in the current implementation — see the Gist
+sync section below for how it works today:
+- Reconciliation is whole-payload last-write-wins with no merge. Two
+  devices edited while offline = one silently loses.
+- A failed push isn't retried or queued; the status goes to `error` and
+  the change stays local until something else triggers a push.
+- `lastKnownRemoteUpdatedAt` is the only conflict signal, and it lives in
+  localStorage — clearing site data makes the app think it's never synced.
+- No "you have unsynced local changes" indicator beyond transient status.
+
+### 4. Calendar blocks should size to their text
+
+Real blocks are 30–50 minutes; at DayView's 64px/hour a 30-minute block
+is ~32px, which cannot fit a title plus a time range. Blocks should grow
+to fit their content rather than clipping. When content still doesn't fit
+(genuinely short blocks, long titles), **clicking a block opens a detail
+modal** with the full title, time, category, notes, and check-in state.
+Watch out: block height currently encodes duration, and the timeline
+positions blocks absolutely against a shared ruler — letting height float
+free of duration breaks that correspondence, so decide deliberately
+whether the ruler stays authoritative (and text overflows into the modal)
+or blocks can push each other down.
+
+### 5. Settings becomes its own bottom-nav tab
+
+Move settings out of the header icon into the bottom nav (bottom-right).
+The owner expects settings to grow, and a modal launched from a header
+icon doesn't scale to that. `BottomNav`'s `NavView` union and the
+`SettingsModal` → screen conversion are the mechanical parts.
+
+**First new settings — streak day exclusions:**
+- "Ignore days:" with a checkbox per weekday. Ignored days are excluded
+  from streak math entirely.
+- A dependent toggle, only enabled once at least one day is ignored:
+  *"Only ignore those days if there's no special event"* — so an ignored
+  Saturday still counts if a one-off event was scheduled that day.
+
+**Why this matters more than it looks:** the owner's real blueprint has
+empty Saturday and Sunday, and `computeCompletionRatio` returns `1` when
+a day has nothing scheduled — so weekends currently count as automatic
+streak *successes* and inflate the streak. This setting is a correctness
+fix, not a preference. Whatever shape it takes, `engine/streaks.ts` needs
+to learn about excluded days, and it must stay pure — pass the exclusion
+config in, don't read settings from inside the engine.
+
+### 6. Notifications
+
+Target devices are a laptop and a Samsung Android phone. See the
+"Notifications: what's actually possible" section below for the research
+— the short version is that the Notification Triggers API that would have
+made this easy was abandoned by Chrome, so server-free *scheduled* local
+notifications do not exist on the web platform.
+
+## Notifications: what's actually possible
+
+Researched 2026-08-20. Recording it here so nobody re-derives it.
+
+**The API that would have solved this is dead.** Chrome's Notification
+Triggers API (`showTrigger` + `TimestampTrigger`) let a service worker
+schedule a notification for a future timestamp with no server, and fired
+on Android even when the browser was closed. Chrome ended development:
+*"It wasn't clear that we could provide consistent and reliable
+experiences across platforms."* It sits under "No longer pursuing" and
+never got a spec draft. It's still reachable behind
+`#enable-experimental-web-platform-features`, which is not something to
+build a daily-driver routine app on.
+
+That leaves four real options:
+
+| Approach | Works when app closed? | Needs a server? | Effort |
+|---|---|---|---|
+| `showNotification` while app is open | No | No | Trivial |
+| Web Push (VAPID) | Yes | **Yes** — something must send | High |
+| Scheduled sender (GH Actions cron → push) | Yes | Uses Actions as the server | High, and cron drifts 5–15 min |
+| **Export `.ics` → phone's native calendar** | **Yes** | **No** | **Low** |
+
+**Recommended: the `.ics` route.** A weekly blueprint is exactly what
+iCalendar `RRULE` was designed for. Cadence generates a `.ics` feed;
+Google/Samsung Calendar subscribes to it and handles alarms natively —
+reliable, offline, battery-friendly, no backend, and it works on the
+laptop too. Two variants:
+- **One-time import**: download `.ics`, import to the calendar. Immediate
+  and dead simple; must be re-imported when the blueprint changes.
+- **Subscribed URL**: publish the `.ics` as a file in the existing sync
+  Gist and subscribe by URL. Edits propagate on their own, though Google
+  refreshes external calendars on its own schedule (often hours, not
+  minutes) — fine for a stable routine, bad for same-day edits.
+
+Web Push only becomes worth it if notifications must reflect *same-day*
+changes (a "running late" push moving the next three blocks). That's a
+real scenario for this app, so revisit if `.ics` latency proves annoying.
+
+## The owner's real blueprint (context, not committed)
+
+The owner keeps their actual schedule as a JSON backup outside the repo
+(`~/Downloads/cadence-backup-*.json`) and imports it. **It must never be
+committed** — `.gitignore` covers `*.local` and `.env` but not a stray
+`cadence-backup-*.json`, so be careful if one ever lands in the repo
+directory. Shape notes, useful when reasoning about real-world fit:
+- Weekdays run 09:00–22:50; Sat/Sun are `wakeMinutes` 10:30 with **no
+  blocks at all**.
+- Blocks are 30–60 min; titles run to ~22 chars ("Obsidian Notes & Cards",
+  "Deep Cleaning (Part 1)").
+- It was hand-authored rather than built through the Blueprint UI, so
+  block ids are semantic (`mon-algebra`) rather than `crypto.randomUUID()`,
+  and `streakState` carries an extra `lastActiveDate` field that
+  `StreakState` does not define. The import validator ignores unknown
+  fields, which is why it loaded cleanly — worth knowing before anyone
+  tightens validation to reject extras.
+
 ## Tech stack
 
 - React 18+ / TypeScript (strict, no `any`) / Vite

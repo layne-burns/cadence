@@ -18,6 +18,13 @@ dist-ssr/
 .env
 .env.local
 
+# The owner's real schedule is personal data and lives outside the repo.
+# This is a guardrail for the case where an exported backup gets dropped
+# into the project directory while debugging an import — the repo is
+# public, so a stray one would publish their daily routine.
+cadence-backup-*.json
+*.ics
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
