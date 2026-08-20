@@ -117,6 +117,14 @@ export function useSync(): UseSyncResult {
     db.getDataVersion,
   );
 
+  /**
+   * Returns whether the pull actually succeeded. It reports rather than
+   * throws because most callers want to set status and carry on — but
+   * they must not reload on failure, which would wipe the error message
+   * off the screen and make a failed sync look like a no-op. That was a
+   * real bug: "Sync (download)" appeared to do nothing whenever it
+   * errored, because the reload erased the evidence.
+   */
   const pullFromRemote = useCallback(async (pat: string, gistId: string) => {
     setStatus({ state: "syncing" });
     try {
@@ -135,8 +143,10 @@ export function useSync(): UseSyncResult {
       );
       writeLastKnownRemoteUpdatedAt(updatedAt);
       setStatus({ state: "synced", lastSyncedAt: new Date().toISOString() });
+      return true;
     } catch (error) {
       setStatus(errorToStatus(error));
+      return false;
     }
   }, []);
 
@@ -172,12 +182,10 @@ export function useSync(): UseSyncResult {
     try {
       const { updatedAt } = await fetchGist(pat, gistId);
       if (shouldPullBeforePush(readLastKnownRemoteUpdatedAt(), updatedAt)) {
-        await pullFromRemote(pat, gistId);
         // Every hook read its slice of the database at mount, so a pull
         // that replaced everything leaves the UI showing stale data. A
-        // reload is the honest way to re-seed all of them, and it only
-        // happens when the remote genuinely moved.
-        window.location.reload();
+        // reload re-seeds them — but only if the pull actually worked.
+        if (await pullFromRemote(pat, gistId)) window.location.reload();
       } else {
         writeLastKnownRemoteUpdatedAt(updatedAt);
         setStatus({ state: "synced", lastSyncedAt: new Date().toISOString() });
@@ -271,10 +279,8 @@ export function useSync(): UseSyncResult {
         if (existingId) {
           saveCredentials({ pat, gistId: existingId });
           setIsConfigured(true);
-          await pullFromRemote(pat, existingId);
-          // The pull replaced the whole local database, so every hook is
-          // now holding stale state — same reasoning as the import path.
-          window.location.reload();
+          // Same rule: reload only if the pull succeeded.
+          if (await pullFromRemote(pat, existingId)) window.location.reload();
           return;
         }
 
@@ -324,10 +330,10 @@ export function useSync(): UseSyncResult {
     }
     // Deliberately discarding local edits, so stop them blocking the pull.
     hasUnpushedChanges.current = false;
-    await pullFromRemote(credentials.pat, credentials.gistId);
-    // The pull replaced the whole database; every hook is holding state
-    // read at mount, so re-seed them the honest way.
-    window.location.reload();
+    const ok = await pullFromRemote(credentials.pat, credentials.gistId);
+    // Only reload on success; reloading after a failure would erase the
+    // error the user needs to see.
+    if (ok) window.location.reload();
   }, [pullFromRemote]);
 
   return { status, isConfigured, configure, uploadNow, downloadNow };

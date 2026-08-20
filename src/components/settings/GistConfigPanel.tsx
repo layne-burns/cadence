@@ -52,7 +52,9 @@ export function GistConfigPanel({ sync }: GistConfigPanelProps) {
   const [gistId, setGistId] = useState("");
   const [busy, setBusy] = useState(false);
   const storedGistId = loadStoredCredentials()?.gistId ?? null;
-  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
+  const [otherGists, setOtherGists] = useState<Array<{ id: string; updatedAt: string }>>(
+    [],
+  );
 
   // Look for the split-brain case: more than one Cadence gist on the
   // account means some device created its own instead of joining the
@@ -63,10 +65,11 @@ export function GistConfigPanel({ sync }: GistConfigPanelProps) {
     let cancelled = false;
     void findCadenceGists(credentials.pat)
       .then((gists) => {
-        if (cancelled || gists.length <= 1) return;
-        setDuplicateWarning(
-          `Found ${gists.length} Cadence sync files on this account.`,
-        );
+        if (cancelled) return;
+        // Only the ones this device *isn't* using. Having extras is only
+        // a problem if another device is pointed at one of them, and the
+        // ids are what let you check that across devices.
+        setOtherGists(gists.filter((g) => g.id !== credentials.gistId));
       })
       .catch(() => {
         // A failure here is not worth surfacing — the real sync status
@@ -118,20 +121,49 @@ export function GistConfigPanel({ sync }: GistConfigPanelProps) {
       {sync.isConfigured ? (
         <>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            Connected{storedGistId ? ` to Gist ${storedGistId.slice(0, 8)}…` : ""}. Changes
-            push automatically a couple of seconds after you make them, and
-            Cadence checks for other devices' changes whenever you open it.
+            Changes push automatically a couple of seconds after you make them,
+            and Cadence checks for other devices' changes whenever you open it.
           </p>
-          {duplicateWarning && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-900 dark:bg-red-950">
-              <p className="text-xs font-medium text-red-700 dark:text-red-300">
-                {duplicateWarning}
+          {/* Full id, selectable: comparing this string between devices is
+              the only reliable way to confirm they're on the same file. */}
+          <div className="rounded-lg bg-neutral-50 p-2.5 dark:bg-neutral-800/50">
+            <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+              This device syncs to
+            </p>
+            <code className="select-all break-all text-xs text-neutral-800 dark:text-neutral-200">
+              {storedGistId ?? "—"}
+            </code>
+            <p className="mt-1 text-[11px] text-neutral-400 dark:text-neutral-600">
+              Both devices must show this exact id.
+            </p>
+          </div>
+          {otherGists.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950">
+              <p className="text-xs font-medium text-amber-800 dark:text-amber-200">
+                {otherGists.length} other Cadence file
+                {otherGists.length === 1 ? "" : "s"} on this account
               </p>
-              <p className="mt-1 text-xs text-red-600 dark:text-red-400">
-                Your devices are saving to different files and will never see
-                each other. Decide which one has the data you want, put that Gist
-                ID in the field below on <em>every</em> device, then delete the
-                other at gist.github.com.
+              <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">
+                Left over from a device that made its own file instead of
+                joining. Harmless if every device shows the id above — but if
+                another device shows one of these instead, they aren't talking
+                to each other.
+              </p>
+              <ul className="mt-1.5 flex flex-col gap-1">
+                {otherGists.map((gist) => (
+                  <li key={gist.id} className="flex flex-wrap items-baseline gap-2">
+                    <code className="select-all break-all text-[11px] text-amber-900 dark:text-amber-100">
+                      {gist.id}
+                    </code>
+                    <span className="text-[11px] text-amber-700 dark:text-amber-300">
+                      updated {new Date(gist.updatedAt).toLocaleString()}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+                Once every device shows the same id, delete the leftovers at
+                gist.github.com so this stops being ambiguous.
               </p>
             </div>
           )}
