@@ -46,6 +46,7 @@ export function CalendarScreen({ calendar, templates, now }: CalendarScreenProps
           instance={calendar.instances[calendar.anchorDate]!}
           isToday={calendar.anchorDate === today}
           now={now}
+          categories={templates.blueprint.categories}
           getLogForBlock={(blockId) => calendar.getLogForBlock(calendar.anchorDate, blockId)}
           onToggleComplete={(block) => void calendar.toggleComplete(calendar.anchorDate, block)}
           onAddEvent={(values) => void calendar.addEvent(calendar.anchorDate, values)}
@@ -73,6 +74,7 @@ export function CalendarScreen({ calendar, templates, now }: CalendarScreenProps
           instances={calendar.instances}
           today={today}
           now={now}
+          categories={templates.blueprint.categories}
           getLogForBlock={calendar.getLogForBlock}
           onToggleComplete={(date, block) => void calendar.toggleComplete(date, block)}
           onAddEvent={(date, values) => void calendar.addEvent(date, values)}

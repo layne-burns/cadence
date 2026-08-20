@@ -40,6 +40,10 @@ export interface TelemetrySample {
   categoryId: string | null;
   completed: boolean;
   energyLevel?: EnergyLevel;
+  /** Both this and `energyLevel` are only present when the user answered
+   * the optional post-check-in prompt, so aggregates over them must
+   * report their own sample size rather than implying full coverage. */
+  frictionNote?: string;
 }
 
 /** One day's outcome against the 75% completion threshold. `usedGraceDay`

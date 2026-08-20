@@ -1,6 +1,6 @@
 import { Plus } from "lucide-react";
 import { useState } from "react";
-import type { DailyInstance, RenderedBlock } from "../../types/schedule";
+import type { Category, DailyInstance, RenderedBlock } from "../../types/schedule";
 import type { AdherenceLog } from "../../types/adherence";
 import type { NewEventInput } from "../../hooks/useSchedule";
 import { TimeblockCard } from "./TimeblockCard";
@@ -8,6 +8,7 @@ import { TimeGridRuler } from "./TimeGridRuler";
 import { EventForm } from "./EventForm";
 import { Modal } from "../common/Modal";
 import { cx } from "../../lib/cx";
+import { resolveCategoryColor } from "../../lib/categories";
 import { dayNumber, formatDateLabel, formatWeekdayShort, minutesSinceMidnight } from "../../lib/time";
 
 // Denser than the single-day view — several columns share the width, and
@@ -23,6 +24,7 @@ interface MultiDayViewProps {
   instances: Record<string, DailyInstance>;
   today: string;
   now: Date;
+  categories: Category[];
   getLogForBlock: (date: string, blockId: string) => AdherenceLog | undefined;
   onToggleComplete: (date: string, block: RenderedBlock) => void;
   onAddEvent: (date: string, values: NewEventInput) => void;
@@ -34,6 +36,7 @@ export function MultiDayView({
   instances,
   today,
   now,
+  categories,
   getLogForBlock,
   onToggleComplete,
   onAddEvent,
@@ -122,6 +125,7 @@ export function MultiDayView({
                     <TimeblockCard
                       block={block}
                       completed={getLogForBlock(date, block.id)?.completed ?? false}
+                      categoryColor={resolveCategoryColor(categories, block.categoryId)}
                       heightPx={blockHeight}
                       onToggleComplete={() => onToggleComplete(date, block)}
                       onOpenDetail={() => onOpenBlockDetail(date, block)}

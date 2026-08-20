@@ -4,6 +4,7 @@ import { Modal } from "../common/Modal";
 import { Button } from "../common/Button";
 import { Input } from "../common/Input";
 import { buildCategoryTree } from "../../lib/categories";
+import { shadeVariant } from "../../lib/color";
 import { STARTER_TAXONOMY_CATEGORY_COUNT } from "../../lib/taxonomy";
 import type { Category } from "../../types/schedule";
 
@@ -51,9 +52,13 @@ export function CategoryManager({
   function handleAddChild(parent: Category, event: FormEvent) {
     event.preventDefault();
     if (!childName.trim()) return;
-    // Inherits the parent's colour so charts stay grouped by top-level by
-    // default; it stays editable afterwards.
-    onAdd(childName.trim(), parent.color, parent.id);
+    // A shade of the parent's hue rather than a copy of it, so siblings
+    // stay tellable apart while the family still reads as one colour.
+    // Slot it after the existing children so each new one differs from
+    // the last. Still editable afterwards.
+    const siblingCount = categories.filter((c) => c.parentId === parent.id).length;
+    const color = shadeVariant(parent.color, siblingCount, siblingCount + 1);
+    onAdd(childName.trim(), color, parent.id);
     setChildName("");
     setAddingChildTo(null);
   }

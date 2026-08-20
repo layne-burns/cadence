@@ -15,6 +15,7 @@
  */
 
 import type { Category } from "../types/schedule";
+import { shadeVariant } from "./color";
 
 export interface TaxonomyEntry {
   name: string;
@@ -162,24 +163,29 @@ export function applyStarterTaxonomy(existing: Category[]): ApplyTaxonomyResult 
     }
     categories.push({ id: parentId, name: entry.name, color: entry.color });
 
-    for (const childName of entry.children) {
+    entry.children.forEach((childName, index) => {
+      // A distinct shade of the parent hue rather than the parent's exact
+      // colour: everything under Academics still reads as blue, but the
+      // subcategories are tellable apart. Flat inheritance made every
+      // block in a family render identically.
+      const childColor = shadeVariant(entry.color, index, entry.children.length);
       const childMatch = existing.find(
         (c) => c.parentId === parentId && normalize(c.name) === normalize(childName),
       );
       if (childMatch) {
         reused += 1;
         consumedIds.add(childMatch.id);
-        categories.push({ ...childMatch, name: childName, color: entry.color, parentId });
+        categories.push({ ...childMatch, name: childName, color: childColor, parentId });
       } else {
         created += 1;
         categories.push({
           id: crypto.randomUUID(),
           name: childName,
-          color: entry.color,
+          color: childColor,
           parentId,
         });
       }
-    }
+    });
   }
 
   const survivingIds = new Set(categories.map((c) => c.id));

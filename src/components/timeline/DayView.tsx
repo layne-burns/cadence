@@ -1,6 +1,6 @@
 import { AlarmClockOff, Plus } from "lucide-react";
 import { useState } from "react";
-import type { DailyInstance, RenderedBlock } from "../../types/schedule";
+import type { Category, DailyInstance, RenderedBlock } from "../../types/schedule";
 import type { AdherenceLog } from "../../types/adherence";
 import type { NewEventInput } from "../../hooks/useSchedule";
 import type { PushDeltaMinutes } from "../../engine/timeShifter";
@@ -11,6 +11,7 @@ import { TimeShifterModal } from "./TimeShifterModal";
 import { Modal } from "../common/Modal";
 import { Button } from "../common/Button";
 import { minutesSinceMidnight } from "../../lib/time";
+import { resolveCategoryColor } from "../../lib/categories";
 
 // 80px/hour rather than 64: at 64 a 30-minute block was 32px, which
 // cannot fit a title and a time range, and the owner's real schedule is
@@ -24,6 +25,7 @@ interface DayViewProps {
   instance: DailyInstance;
   isToday: boolean;
   now: Date;
+  categories: Category[];
   getLogForBlock: (id: string) => AdherenceLog | undefined;
   onToggleComplete: (block: RenderedBlock) => void;
   onAddEvent: (values: NewEventInput) => void;
@@ -37,6 +39,7 @@ export function DayView({
   instance,
   isToday,
   now,
+  categories,
   getLogForBlock,
   onToggleComplete,
   onAddEvent,
@@ -99,6 +102,7 @@ export function DayView({
                   <TimeblockCard
                     block={block}
                     completed={getLogForBlock(block.id)?.completed ?? false}
+                    categoryColor={resolveCategoryColor(categories, block.categoryId)}
                     heightPx={blockHeight}
                     onToggleComplete={() => onToggleComplete(block)}
                     onOpenDetail={() => onOpenBlockDetail(block)}
